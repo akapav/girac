@@ -1,3 +1,4 @@
+namespace tc {
 public class TestClass : GLib.Object {
 
     /* Fields */
@@ -19,4 +20,5 @@ public class TestClass : GLib.Object {
         return this.first_data + oth.first_data;
     }
 
+}
 }
