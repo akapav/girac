@@ -20,5 +20,10 @@ public class TestClass : GLib.Object {
         return this.first_data + oth.first_data;
     }
 
+    public signal void some_event();
+
+    public void method () {
+        some_event ();
+    }
 }
 }
