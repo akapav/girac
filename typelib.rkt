@@ -35,6 +35,9 @@
 (define _functioninfo-ptr (_cpointer 'GIFunctionInfo))
 (define _callableinfo-ptr (_cpointer 'GIClaalbleInfo))
 (define _typeinfo-ptr (_cpointer 'GITypeInfo))
+(define _arginfo-ptr (_cpointer 'GIArgInfo))
+(define _structinfo-ptr (_cpointer 'GIStructInfo))
+(define _registered-ptr (_cpointer 'GIREgisteredTypeInfo))
 
 (define _gerror-ptr (_cpointer/null 'Gerror))
 (define _gerror-ptr-ptr (_cpointer/null _gerror-ptr))
@@ -197,17 +200,32 @@
  (wraps-vfunc 4)
  (throws 5))
 
+(define (function-info base-info)
+  (cast base-info _base-info-ptr _functioninfo-ptr))
+
 (define function-symbol
   (get-ffi-obj "g_function_info_get_symbol" libtl
 	       (_fun _functioninfo-ptr -> _string)))
 
-
-(define (callable-info func-info)
+(define (func->callable-info func-info)
   (cast func-info _functioninfo-ptr _callableinfo-ptr))
 
 (define callable-return-type
   (get-ffi-obj "g_callable_info_get_return_type" libtl
 	       (_fun _callableinfo-ptr -> _typeinfo-ptr)))
+
+(define callable-get-n-args
+  (get-ffi-obj "g_callable_info_get_n_args" libtl
+	       (_fun _callableinfo-ptr -> _gint)))
+
+(define callable-get-arg
+  (get-ffi-obj "g_callable_info_get_arg" libtl
+	       (_fun _callableinfo-ptr _gint -> _arginfo-ptr)))
+
+(define (callable-args/list call-info)
+  (let ((cnt (callable-get-n-args call-info)))
+    (for/list ((i (in-range cnt)))
+	      (callable-get-arg call-info i))))
 
 (define type-get-tag
   (get-ffi-obj "g_type_info_get_tag" libtl
@@ -220,36 +238,114 @@
 (define type-get-iface
   (get-ffi-obj "g_type_info_get_interface" libtl
 	       (_fun _typeinfo-ptr -> _base-info-ptr)))
+
+
+(define _type-get-is-pointer
+  (get-ffi-obj "g_type_info_is_pointer" libtl
+	       (_fun _typeinfo-ptr -> _gboolean)))
+
+(define (type-is-pointer? type-info)
+  (gbool->bool (_type-get-is-pointer type-info)))
+
+(define type-array-length
+  (get-ffi-obj "g_type_info_get_array_length" libtl
+	       (_fun _typeinfo-ptr -> _gint)))
+
+(define type-array-type
+  (get-ffi-obj "g_type_info_get_array_type" libtl
+	       (_fun _typeinfo-ptr -> _int)))
+
+(define argument-get-type
+  (get-ffi-obj "g_arg_info_get_type" libtl
+	       (_fun _arginfo-ptr -> _typeinfo-ptr)))
+
+;; wrong!
+;; (define gir-find-by-type
+;;   (get-ffi-obj "g_irepository_find_by_gtype" libtl
+;; 	       (_fun _repos-ptr _typeinfo-ptr -> _base-info-ptr)))
+
+(define (type->list type)
+  (let* ((tag (type-get-tag type))
+	 (ptr (type-is-pointer? type))
+	 (type-sym
+	  (case tag
+	    ((0) '_void)
+	    ((1) '_gboolean)
+	    ((2) '_gint8)
+	    ((3) '_guint8)
+	    ((4) '_gint16)
+	    ((5) '_guint16)
+	    ((6) '_gint32)
+	    ((7) '_guint32)
+	    ((8) '_gint64)
+	    ((9) '_guint64)
+	    ((10) '_gfloat)
+	    ((11) '_gdouble)
+	    ((12) '_gtype)
+	    ((13) (if ptr '_string
+		      "not supported: GI_TYPE_TAG_UTF8"))
+	    ((14) "not supported: GI_TYPE_TAG_FILENAME")
+	    ((15) `(array ,(type-array-type type)))
+	    ((16) (let ((bt (gir-get-type (type-get-iface type))))
+		    (case bt
+		      ((object)
+		       (object-type-name (object-info (type-get-iface type))))
+		      ((struct)
+		       (let ((name (registered-get-name
+				    (struct->registered-info
+				     (struct-info
+				      (type-get-iface type))))))
+			 (if name (string->symbol name)
+			     '_pointer)))
+		      (else bt))))
+	     ((17) "not supported: GI_TYPE_TAG_GLIST")
+	     ((18) "not supported: GI_TYPE_TAG_GSLIST")
+	     ((19) "not supported: GI_TYPE_TAG_GHASH")
+	     ((20) "not supported: GI_TYPE_TAG_ERROR")
+	     ((21) "not supported: GI_TYPE_TAG_UNICHAR"))))
+	 (if (and (symbol? type-sym)
+		  (not (eq? type-sym '_string))
+		  (not (eq? type-sym '_pointer))
+		  ptr)
+	     (cons '* type-sym)
+	     type-sym)))
+
+(define (struct-info base-info)
+  (cast base-info _base-info-ptr _structinfo-ptr))
+
+(define (struct->registered-info struct-info)
+  (cast struct-info _structinfo-ptr _registered-ptr))
+
+(define registered-get-name
+  (get-ffi-obj "g_registered_type_info_get_type_name" libtl
+	       (_fun _registered-ptr -> _string)))
 ;;;
 
-(define (args fi)
-  (let* ((ret (callable-return-type (callable-info fi)))
-	 (type (type-get-tag ret)))
-    (if (not (= type 16)) type
-	(let ((bt (gir-get-type (type-get-iface ret))))
-	  (if (eq? bt 'object)
-	      (object-type-name (object-info (type-get-iface ret)))
-	      bt)))))
+(define (callable-return-dump fi)
+  (let ((type (callable-return-type (func->callable-info fi))))
+    (type->list type)))
+                                                         
+(define (callable-args-dump fi)
+  (let ((args (callable-args/list(func->callable-info fi))))
+    (map (compose type->list argument-get-type) args)))
 
-(gir-repostiry-prepend-path "/home/aka/devel/girac/1")
-(gir-require "TestClass")
+(define (function-dump fi)
+  (list (function-symbol fi)
+	(function-get-flags fi)
+	(callable-args-dump fi) '=>
+	(callable-return-dump fi)))
 
-;(displayln (gir-get-so #f "tc"))
+(gir-require "GLib")
+(gir-require "GObject")
+(gir-require "GIRepository")
 
-(define libtc (ffi-lib "/home/aka/devel/girac/1/libtc"))
-
-;(displayln (map gir-get-type (gir-info/list "TestClass")))
-;;;
-(gir-repostiry-prepend-path "/home/aka/devel/girac/0/code")
-(gir-require "Lg")
-;(displayln (gir-get-so #f "Lg"))
-
-(define liblg (ffi-lib "/home/aka/devel/girac/0/code/liblg"))
-
-(map (compose (lambda (nfo) (map (lambda (fi)
-				   (list (function-symbol fi)
-					 (function-is-method? fi)
-					 (args fi)))
-				 (object-method/list nfo)))
-	      object-info)
-     (filter gir-type-object? (gir-info/list "Lg")))
+(map (lambda (base-info)
+       (cond ((gir-type-object? base-info)
+	      (map function-dump (object-method/list (object-info base-info))))
+	     ((gir-type-function? base-info)
+	      (function-dump (function-info base-info)))
+	     ((gir-type-struct? base-info) 'struct)
+	     (else (begin (display "skipping: ")
+			  (displayln (gir-get-type base-info))
+			  #f))))
+	     (gir-info/list "GIRepository"))
