@@ -2,7 +2,7 @@
 
 (require ffi/unsafe
 	 ffi/unsafe/define
-	 "./girepos-ffi.rkt")
+	 (prefix-in gir: "./girepos-ffi.rkt"))
 
 ;;; initialize gtype
 ;;; must be invoked before any other action with gtype system
@@ -41,3 +41,16 @@
 (struct repository
 	(classes funs)
 	#:mutable)
+
+;;; test
+(define (do-gir gir)
+  (gir:repository-require gir)
+  (for ((fn (filter gir:type-function? (gir:repository-info-list gir))))
+       (let ((fn (gir:function-info fn)))
+	 (displayln
+	  (list
+	   (gir:function-symbol fn)
+	   (gir:function-is-method? fn)
+	   (gir:function-throwable? fn))))))
+
+(do-gir "Gtk")
