@@ -40,9 +40,11 @@
 	   (gir:function-type fn)
 	   (gir:function-throwable? fn)
 	   (let ((rt (gir:callable-return-type clbl)))
-	     (list (gir:type-interface rt)
+	     (list (let ((iface (gir:type-interface rt)))
+		     (if iface (gir:get-type iface) '_))
 		   (gir:type-tag rt)
 		   (gir:type-is-pointer? rt)))
 	   (gir:callable-arguments clbl))))))
 
 (do-gir "Gtk")
+(collect-garbage)
