@@ -1,29 +1,12 @@
 #lang racket
 
-(require ffi/unsafe
-	 ffi/unsafe/define
+(require "./gobject.rkt"
 	 (prefix-in gir: "./girepos-ffi.rkt"))
 
-;;; initialize gtype
-;;; must be invoked before any other action with gtype system
-
-(define libgobject (ffi-lib "/usr/lib/libgobject-2.0"))
-
-(define g-type-init
-  (get-ffi-obj "g_type_init" libgobject (_fun -> _void)))
-
-(define ensure-gtypes-initialized
-  (let ((initialized #f))
-    (lambda ()
-      (unless initialized
-	(g-type-init)
-	(set! initialized #t)))))
-
-(ensure-gtypes-initialized)
-
 ;;; misc utils
+;;todo: find proper place -- could be used widely
 
-;; destructive push to list -- works for structs and variables
+;;; destructive push to list -- works for structs and variables
 (define-for-syntax (struct/setter-name stx)
   (string->symbol
    (string-append "set-" (symbol->string (syntax->datum stx)) "!")))
@@ -37,20 +20,29 @@
 	 #'(setter obj (cons val (acc obj)))))
       ((_ val list) #'(set! list (cons val list))))))
 
+
 ;;; 
 (struct repository
 	(classes funs)
 	#:mutable)
 
-;;; test
+
+;;;; test
 (define (do-gir gir)
   (gir:repository-require gir)
   (for ((fn (filter gir:type-function? (gir:repository-info-list gir))))
-       (let ((fn (gir:function-info fn)))
+       (let* ((fn (gir:baseinfo-downcast fn))
+	      (clbl (gir:function->callable fn)))
 	 (displayln
 	  (list
 	   (gir:function-symbol fn)
-	   (gir:function-is-method? fn)
-	   (gir:function-throwable? fn))))))
+	   (gir:foo fn)
+	   (gir:function-type fn)
+	   (gir:function-throwable? fn)
+	   (let ((rt (gir:callable-return-type clbl)))
+	     (list (gir:type-interface rt)
+		   (gir:type-tag rt)
+		   (gir:type-is-pointer? rt)))
+	   (gir:callable-arguments clbl))))))
 
 (do-gir "Gtk")
