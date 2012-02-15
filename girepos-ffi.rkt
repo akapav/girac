@@ -345,11 +345,13 @@
  (error 20)
  (unichar 21))
 
-;;todo: chack what's going on -- always returns "unknown"
-(ffi-wrap "g_type_tag_to_string" 
-	  ( _typeinfo-ptr -> _string))
 
-(define/provide type->string g-type-tag-to-string)
+(ffi-wrap "g_type_tag_to_string" 
+	  ( _int -> _string))
+
+(define/provide (type->string type-info)
+  (let ((tag (g-type-info-get-tag type-info)))
+    (g-type-tag-to-string tag)))
 
 ;; huh, modeled after following definition from the doc:
 ;; #define G_TYPE_TAG_IS_BASIC(tag) (tag < GI_TYPE_TAG_ARRAY || tag == GI_TYPE_TAG_UNICHAR)

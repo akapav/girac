@@ -43,6 +43,7 @@
 	     (list (let ((iface (gir:type-interface rt)))
 		     (if iface (gir:get-type iface) '_))
 		   (gir:type-tag rt)
+		   (gir:type->string rt)
 		   (gir:type-is-pointer? rt)))
 	   (gir:callable-arguments clbl))))))
 
