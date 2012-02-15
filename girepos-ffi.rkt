@@ -165,8 +165,13 @@
 
 ;;;; repository functions
 
-;;; at the moment, all functions work with the global repository
-;;; so #f (null) is always sent as a repository argument
+;;; unref function for all baseinfo derived types
+(ffi-wrap "g_base_info_unref"
+	  (_baseinfo-ptr -> _void))
+
+
+;;; at the moment, all functions work with the global (default)
+;;; repository so #f (null) is always sent as a repository argument
 
 ;;; load a repository (typelib)
 (ffi-wrap "g_irepository_require"
@@ -193,8 +198,12 @@
 	  (_repos-ptr _string _gint
 		      -> _baseinfo-ptr))
 
+(define g-irepository-get-info-unref
+  (unref-hook g-irepository-get-info
+	      g-base-info-unref))
+
 (define-enumerator->list
-  repos-infos g-irepository-get-n-infos g-irepository-get-info (#f) (#f))
+  repos-infos g-irepository-get-n-infos g-irepository-get-info-unref (#f) (#f))
 
 ;;; return a list of top level entries (as _baseinfo-ptr)
 (define/provide repository-info-list repos-infos)
@@ -203,8 +212,8 @@
 (ffi-wrap "g_base_info_get_type"
 	  (_baseinfo-ptr -> _gint))
 
-(ffi-wrap "g_base_info_unref"
-	  (_baseinfo-ptr -> _void))
+(define-upcast (typeinfo _typeinfo-ptr) (baseinfo _baseinfo-ptr))
+(define-upcast (arginfo _arginfo-ptr) (baseinfo _baseinfo-ptr))
 
 ;;;; function type
 
@@ -275,7 +284,10 @@
 (ffi-wrap "g_callable_info_get_return_type"
 	  ( _callableinfo-ptr -> _typeinfo-ptr))
 
-(define/provide callable-return-type g-callable-info-get-return-type)
+(define/provide callable-return-type
+  (unref-hook g-callable-info-get-return-type
+	      (compose g-base-info-unref
+		       typeinfo->baseinfo)))
 
 (ffi-wrap"g_callable_info_get_n_args"
 	 (_callableinfo-ptr -> _gint))
@@ -283,8 +295,13 @@
 (ffi-wrap "g_callable_info_get_arg"
 	  (_callableinfo-ptr _gint -> _arginfo-ptr))
 
+(define g-callable-info-get-arg-unref
+  (unref-hook g-callable-info-get-arg
+	      (compose g-base-info-unref
+		       arginfo->baseinfo)))
+
 (define-enumerator->list
-  callable-args g-callable-info-get-n-args g-callable-info-get-arg () ())
+  callable-args g-callable-info-get-n-args g-callable-info-get-arg-unref () ())
 
 (define/provide callable-arguments callable-args)
 
@@ -331,6 +348,7 @@
 ;;todo: chack what's going on -- always returns "unknown"
 (ffi-wrap "g_type_tag_to_string" 
 	  ( _typeinfo-ptr -> _string))
+
 (define/provide type->string g-type-tag-to-string)
 
 ;; huh, modeled after following definition from the doc:
@@ -342,12 +360,14 @@
 ;;todo: add type check
 (ffi-wrap "g_type_info_get_interface" 
 	  ( _typeinfo-ptr -> _baseinfo-ptr))
+
 (define/provide type-interface
   (unref-hook g-type-info-get-interface
 	      g-base-info-unref))
 
 (ffi-wrap "g_type_info_is_pointer" 
 	  ( _typeinfo-ptr -> _gboolean))
+
 (define/provide (type-is-pointer? type-info)
   (gbool->bool (g-type-info-is-pointer type-info)))
 
