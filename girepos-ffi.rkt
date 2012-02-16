@@ -3,7 +3,9 @@
 (require ffi/unsafe
 	 ffi/unsafe/define
 	 "./gobject.rkt"
-	 "./ffi-wrap.rkt")
+	 "./ffi-wrap.rkt"
+	 (for-syntax "./ffi-wrap.rkt")
+	 (for-syntax "./names.rkt"))
 
 (define-syntax define/provide
   (syntax-rules ()
@@ -203,11 +205,11 @@
 (define g-irepository-get-info-unref
   (unref-baseinfo g-irepository-get-info))
 
-(define-enumerator->list
-  repos-infos g-irepository-get-n-infos g-irepository-get-info-unref (#f) (#f))
-
 ;;; return a list of top level entries (as _baseinfo-ptr)
-(define/provide repository-info-list repos-infos)
+(define-enumerator->list
+  repository-info-list g-irepository-get-n-infos g-irepository-get-info-unref (#f) (#f))
+
+(provide repository-info-list)
 
 ;;; return a type for an entry
 (ffi-wrap "g_base_info_get_type"
@@ -215,6 +217,8 @@
 
 (define-upcast (typeinfo _typeinfo-ptr) (baseinfo _baseinfo-ptr))
 (define-upcast (arginfo _arginfo-ptr) (baseinfo _baseinfo-ptr))
+(define-upcast (gobjinfo _gobjinfo-ptr) (baseinfo _baseinfo-ptr))
+(define-upcast (funcinfo _functioninfo-ptr) (baseinfo _baseinfo-ptr))
 
 ;;;; function type
 
@@ -300,9 +304,10 @@
 		  arginfo->baseinfo))
 
 (define-enumerator->list
-  callable-args g-callable-info-get-n-args g-callable-info-get-arg-unref () ())
+  callable-arguments g-callable-info-get-n-args g-callable-info-get-arg-unref () ())
 
-(define/provide callable-arguments callable-args)
+(provide callable-arguments)
+
 
 ;;;; typeinfo type
 
@@ -377,4 +382,132 @@
 
 (ffi-wrap "g_type_info_get_array_type" 
 	  ( _typeinfo-ptr -> _int))
+
+;; g_type_info_get_param_type
 ;
+
+;;;; arginfo type
+
+(ffi-wrap "g_arg_info_get_direction"
+	  (_arginfo-ptr -> _int))
+
+;;; argument direction -- no need for macro since it is the only place
+;;; where direction is used
+(define/provide argument-direction
+  (lambda (arg-info)
+    (let ((dir (g-arg-info-get-direction arg-info)))
+      (case dir
+	((0) 'in-arg)
+	((1) 'out-arg)
+	((2) 'in/out-arg)))))
+
+
+;;todo: this macro doesn't work -- not clear why
+;(define-syntax define-argument-predicate
+;  (lambda (stx)
+;    (syntax-case stx ()
+;      ((_ sym name)
+;       (with-syntax ((lisp-name
+;                       (datum->syntax stx
+;				     (string->symbol
+;				      (lispify-string
+;				       (syntax->datum #'name))))))
+;	 #'(begin
+;	     (ffi-wrap name (_arginfo-ptr -> _gboolean))
+;	     (define/provide sym
+;	       (lambda (arg-info)
+;		 (gbool->bool (lisp-name arg-info))))))))))
+;
+
+(ffi-wrap "g_arg_info_is_caller_allocates"
+	  (_arginfo-ptr -> _gboolean))
+
+(define/provide (argument-client-allocates? arg-info)
+  (gbool->bool (g-arg-info-is-caller-allocates arg-info)))
+
+
+(ffi-wrap "g_arg_info_is_return_value"
+	  (_arginfo-ptr -> _gboolean))
+
+;; todo: not clear what is this predicate for -- doesn't correlate
+;; with argument direction
+(define/provide (argument-is-return-value? arg-info)
+  (gbool->bool (g-arg-info-is-return-value arg-info)))
+
+(ffi-wrap "g_arg_info_is_optional"
+	  (_arginfo-ptr -> _gboolean))
+
+(define/provide (argument-is-optional? arg-info)
+  (gbool->bool (g-arg-info-is-optional arg-info)))
+
+
+(ffi-wrap "g_arg_info_may_be_null"
+	  (_arginfo-ptr -> _gboolean))
+
+(define/provide (argument-is-nullable? arg-info)
+  (gbool->bool (g-arg-info-may-be-null arg-info)))
+
+
+(ffi-wrap "g_arg_info_get_ownership_transfer"
+	  (_arginfo-ptr -> _int))
+
+;;; simillar as argument-direction
+(define/provide argument-ownership-transfer
+  (lambda (arg-info)
+    (let ((own (g-arg-info-get-ownership-transfer arg-info)))
+      (case own
+	((0) 'transfer-nothing)
+	((1) 'transfer-container)
+	((2) 'transfer-full)))))
+
+
+(ffi-wrap "g_arg_info_get_type"
+	  (_arginfo-ptr -> _typeinfo-ptr))
+
+(define/provide argument-type
+  (unref-baseinfo g-arg-info-get-type typeinfo->baseinfo))
+
+
+;;;; object type
+;;; instead of "object", word "class" will be used in the wrapper
+;;; library
+
+(ffi-wrap "g_object_info_get_type_name"
+	  (_gobjinfo-ptr -> _string))
+
+(define/provide class-name g-object-info-get-type-name)
+
+
+(ffi-wrap "g_object_info_get_type_init"
+	  (_gobjinfo-ptr -> _string))
+
+(define/provide class-register-function g-object-info-get-type-init)
+
+(ffi-wrap "g_object_info_get_abstract"
+	  (_gobjinfo-ptr -> _gboolean))
+
+(define/provide (class-is-abstract? obj-info)
+  (gbool->bool (g-object-info-get-abstract obj-info)))
+
+(ffi-wrap "g_object_info_get_parent"
+	  (_gobjinfo-ptr -> _gobjinfo-ptr))
+
+(define/provide class-parent
+  (unref-baseinfo g-object-info-get-parent
+		  gobjinfo->baseinfo))
+
+
+(ffi-wrap "g_object_info_get_n_methods"
+	  (_gobjinfo-ptr -> _gint))
+
+(ffi-wrap "g_object_info_get_method"
+	  (_gobjinfo-ptr _gint -> _functioninfo-ptr))
+
+(define g-object-info-get-method-unref
+  (unref-baseinfo g-object-info-get-method
+		  funcinfo->baseinfo))
+
+(define-enumerator->list class-methods
+  g-object-info-get-n-methods g-object-info-get-method-unref () ())
+
+(provide class-methods)
