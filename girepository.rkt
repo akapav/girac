@@ -30,13 +30,11 @@
 	(type client-allocates? is-optional? is-nullable? ownership))
 
 (struct function
-	(symbol return-type arguments)
-	#:mutable)
+	(symbol type throwable? return-type arguments))
 
 (struct gclass
 	(name parent register-function abstract? methods)
-	#:mutable
-	#:transparent)
+	#:mutable)
 
 (struct repository
 	(classes functions)
@@ -44,21 +42,23 @@
 	#:transparent)
 
 (define (load-class cls type-env)
-  (if (not cls) 'null-class?
-      (let* ((name (gir:class-name cls))
-	     (in-hash (hash-ref type-env name #f)))
-	(or in-hash
-	    (let ((gcls (gclass name
-				(load-class (gir:class-parent cls) type-env)
-				(gir:class-register-function cls)
-				(gir:class-is-abstract? cls)
-				(map (lambda (mtd) (load-function mtd type-env))
-				     (gir:class-methods cls)))))
-	      (hash-set! type-env name gcls)
-	      gcls)))))
+  (unless cls (error 'unknown-class))
+  (let* ((name (gir:class-name cls))
+	 (in-hash (hash-ref type-env name #f)))
+    (or in-hash
+	(let ((gcls (gclass name
+			    (load-class (gir:class-parent cls) type-env)
+			    (gir:class-register-function cls)
+			    (gir:class-is-abstract? cls)
+			    (map (lambda (mtd) (load-function mtd type-env))
+				 (gir:class-methods cls)))))
+	  (hash-set! type-env name gcls)
+	  gcls))))
 
 (define (load-function fn type-env)
-  (gir:function-symbol fn))
+  (function (gir:function-symbol fn)
+	    (gir:function-type fn)
+	    (gir:function-throwable? fn)#f #f))
 
 (define (load-gir gir type-env)
   (gir:repository-require gir)
@@ -75,18 +75,39 @@
     repos))
 
 ;; todo: tmp
+(define (display-function fn)
+  (printf "~a~%" (function-symbol fn))
+  (printf "type: ~a throwable: ~a~%~%"
+	  (function-type fn)
+	  (if (function-throwable? fn) "yes" "no")))
+
+(define (display-class cls)
+  (printf
+   "class: ~a~%parent: ~a~%"
+   (gclass-name cls)
+   (gclass-name (gclass-parent cls)))
+  (printf
+   "type register function: ~a~%abstract: ~a~%"
+   (gclass-register-function cls)
+   (if (gclass-abstract? cls) "yes" "no"))
+  (printf "methods (~a):~%" (length (gclass-methods cls)))
+  (for ((mtd (gclass-methods cls)))
+       (display-function mtd))
+  (printf "------------------~%"))
+
 (define (display-repos repos)
   (for ((cls (repository-classes repos)))
-       (printf "class: ~a~%parent: ~a~%~%"
-	       (gclass-name cls)
-	       (gclass-name (gclass-parent cls)))))
+       (display-class cls))
+  (for ((fn (repository-functions repos)))
+       (display-function fn)))
+
 
 (let ((type-env (make-hash)))
   (hash-set! type-env "GObject"
 	     (gclass "GObject" #f #f #f '()))
   (display-repos (load-gir "Gtk" type-env)))
 
-;;;; test
+;;;; todo: to be removed!!!!
 (define (dump-fn fn)
   (let* ((fn (gir:baseinfo-downcast fn))
 	 (clbl (gir:function->callable fn)))
