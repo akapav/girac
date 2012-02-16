@@ -169,6 +169,8 @@
 (ffi-wrap "g_base_info_unref"
 	  (_baseinfo-ptr -> _void))
 
+(define (unref-baseinfo fn (cast identity))
+  (unref-hook fn (compose g-base-info-unref cast)))
 
 ;;; at the moment, all functions work with the global (default)
 ;;; repository so #f (null) is always sent as a repository argument
@@ -199,8 +201,7 @@
 		      -> _baseinfo-ptr))
 
 (define g-irepository-get-info-unref
-  (unref-hook g-irepository-get-info
-	      g-base-info-unref))
+  (unref-baseinfo g-irepository-get-info))
 
 (define-enumerator->list
   repos-infos g-irepository-get-n-infos g-irepository-get-info-unref (#f) (#f))
@@ -285,9 +286,8 @@
 	  ( _callableinfo-ptr -> _typeinfo-ptr))
 
 (define/provide callable-return-type
-  (unref-hook g-callable-info-get-return-type
-	      (compose g-base-info-unref
-		       typeinfo->baseinfo)))
+  (unref-baseinfo g-callable-info-get-return-type
+		  typeinfo->baseinfo))
 
 (ffi-wrap"g_callable_info_get_n_args"
 	 (_callableinfo-ptr -> _gint))
@@ -296,9 +296,8 @@
 	  (_callableinfo-ptr _gint -> _arginfo-ptr))
 
 (define g-callable-info-get-arg-unref
-  (unref-hook g-callable-info-get-arg
-	      (compose g-base-info-unref
-		       arginfo->baseinfo)))
+  (unref-baseinfo g-callable-info-get-arg
+		  arginfo->baseinfo))
 
 (define-enumerator->list
   callable-args g-callable-info-get-n-args g-callable-info-get-arg-unref () ())
@@ -364,8 +363,7 @@
 	  ( _typeinfo-ptr -> _baseinfo-ptr))
 
 (define/provide type-interface
-  (unref-hook g-type-info-get-interface
-	      g-base-info-unref))
+  (unref-baseinfo g-type-info-get-interface))
 
 (ffi-wrap "g_type_info_is_pointer" 
 	  ( _typeinfo-ptr -> _gboolean))
