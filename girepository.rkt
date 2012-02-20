@@ -244,19 +244,43 @@
   (for ((enum (gir-repository-enums repos)))
        (display-enum enum)))
 
-(define (verify-types repos type-env)
+;;;
+(define (verify-name name type-env)
+  (unless (hash-ref type-env name #f)
+    (printf "~a is missing~%" name)))
+
+(define (verify-class cls type-env)
+  (verify-name (gir-class-name cls) type-env)
+  (verify-name (gir-class-parent cls) type-env)
+  (for ((mtd (gir-class-methods cls)))
+       (verify-function mtd type-env))
+  (for ((iface (gir-class-interfaces cls)))
+       (verify-name iface type-env)))
+
+(define (verify-interface iface type-env)
+  (verify-name (gir-interface-name iface) type-env)
+  (for ((mtd (gir-interface-methods iface)))
+       (verify-function mtd type-env))
+  (for ((iface (gir-interface-deps iface)))
+       (verify-name iface type-env)))
+
+(define (verify-function fn type-env)
+  (let ((ver (lambda (ty)
+	       (let ((tt (gir-type-tag/interface ty)))
+		 (case (first tt)
+		   ((struct interface class enum)
+		    (verify-name (second tt) type-env)))))))
+    (ver (gir-function-return-type fn))
+    (for ((arg (gir-function-arguments fn)))
+	 (ver (gir-argument-type arg)))))
+
+(define (verify-repos repos type-env)
   (for ((cls (gir-repository-classes repos)))
-       (begin
-	 (let ((parent-name (gir-class-parent cls)))
-	   (unless (hash-ref type-env parent-name #f)
-	     (printf "~a is missing~%" parent-name)))
-	 (let ((mtds (gir-class-methods cls)))
-	   (for ((mtd mtds))
-		(let ((rt (gir-type-tag/interface
-			   (gir-function-return-type mtd))))
-		  (when (eq? (first rt) 'interface)
-		    (unless (hash-ref type-env (second rt) #f)
-		      (printf "~a is missing~%" (second rt))))))))))
+       (verify-class cls type-env))
+  (for ((iface (gir-repository-interfaces repos)))
+       (verify-interface iface type-env))
+  (for ((fn (gir-repository-functions repos)))
+       (verify-function fn type-env)))
 
 (let-values (((repos type-env)
 	      (load-girs '(
@@ -272,8 +296,8 @@
 			   ("cairo" "1.0")
 			   ("xlib" "2.0")
 			   ))))
- (display-repos repos)
- (verify-types repos type-env)
+; (display-repos repos)
+ (verify-repos repos type-env)
   )
 
 (collect-garbage)
