@@ -25,10 +25,10 @@
 (define (basic-env)
   (let ((env (make-hash)))
     (hash-set! env "-GObject-"
-	       (gir-class "GObject" #f #f #t '()))
+	       (gir-class "GObject" #f #f #t '() '()))
     env))
 
-(define (empty-repository) (gir-repository '() '() '() '()))
+(define (empty-repository) (gir-repository '() '() '() '() '()))
 
 ;;; 
 
@@ -48,12 +48,15 @@
 (struct gir-struct
 	(name size is-foregin?))
 
+(struct gir-interface
+	(name methods deps))
+
 (struct gir-class
-	(name parent register-function abstract? methods)
+	(name parent register-function abstract? methods interfaces)
 	#:mutable)
 
 (struct gir-repository
-	(classes functions structs enums)
+	(classes functions structs enums interfaces)
 	#:mutable
 	#:transparent)
 
@@ -104,6 +107,19 @@
 	  (hash-set! type-env name gstr)
 	  gstr))))
 
+(define (load-interface iface type-env)
+  (let* ((name (string-append "iface:" (gir:interface-name iface)))
+	 (in-hash (hash-ref type-env name #f)))
+    (or in-hash
+	(let ((giface
+	       (gir-interface name
+			      (map (lambda (mtd) (load-function mtd type-env))
+				   (gir:interface-methodes iface))
+			      (map gir:interface-name
+				   (gir:interface-deps iface)))))
+	  (hash-set! type-env name giface)
+	  giface))))
+
 (define (load-class cls type-env)
   (unless cls (error 'unknown-class))
   (let* ((name (gir:class-name cls))
@@ -115,7 +131,11 @@
 				(gir:class-register-function cls)
 				(gir:class-is-abstract? cls)
 				(map (lambda (mtd) (load-function mtd type-env))
-				     (gir:class-methods cls)))))
+				     (gir:class-methods cls))
+				(map (lambda (iface)
+				       (gir:interface-name iface))
+				     (gir:class-interfaces cls))
+				)))
 	  (hash-set! type-env name gcls)
 	  gcls))))
 
@@ -137,6 +157,9 @@
 	  ((gir:type-object? info)
 	   (push/list! (load-class info~ type-env)
 		       (gir-repository-classes repos)))
+	  ((gir:type-interface? info)
+	   (push/list! (load-interface info~ type-env)
+		       (gir-repository-interfaces repos)))
 	  ((gir:type-function? info)
 	   (push/list! (load-function info~ type-env)
 		       (gir-repository-functions repos)))
@@ -186,11 +209,20 @@
 	  (gir-struct-size str)
 	  (if (gir-struct-is-foregin? str) "yes" "no")))
 
+(define (display-interface iface)
+  (printf "interface: ~a~%" (gir-interface-name iface))
+  (printf "inherits: ~a~%" (gir-interface-deps iface))
+  (printf "methods (~a):~%" (length (gir-interface-methods iface)))
+  (for ((mtd (gir-interface-methods iface)))
+       (display-function mtd))
+  (printf "------------------~%"))
+
 (define (display-class cls)
   (printf
    "class: ~a~%parent: ~a~%"
    (gir-class-name cls)
    (gir-class-parent cls))
+  (printf "implements: ~a~%" (gir-class-interfaces cls))
   (printf
    "type register function: ~a~%abstract: ~a~%"
    (gir-class-register-function cls)
@@ -203,6 +235,8 @@
 (define (display-repos repos)
   (for ((cls (gir-repository-classes repos)))
        (display-class cls))
+  (for ((cls (gir-repository-interfaces repos)))
+       (display-interface cls))
   (for ((fn (gir-repository-functions repos)))
        (display-function fn))
   (for ((str (gir-repository-structs repos)))

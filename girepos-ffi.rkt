@@ -58,6 +58,7 @@
 (define _registered-ptr (_cpointer 'GIREgisteredTypeInfo))
 (define _enuminfo-ptr (_cpointer 'GIEnumInfo))
 (define _valueinfo-ptr (_cpointer 'GIValueInfo))
+(define _interfaceinfo-ptr (_cpointer 'GIInterfaceInfo))
 (define _gerror-ptr (_cpointer/null 'Gerror))
 (define _gerror-ptr-ptr (_cpointer/null _gerror-ptr))
 
@@ -149,7 +150,8 @@
  (object _gobjinfo-ptr)
  (struct _structinfo-ptr)
  (enum _enuminfo-ptr)
- (flags _enuminfo-ptr))
+ (flags _enuminfo-ptr)
+ (interface _interfaceinfo-ptr))
 
 (define-for-syntax (upcast-name dsym usym)
   (string->symbol
@@ -248,6 +250,7 @@
 (define-upcast (structinfo _structinfo-ptr) (baseinfo _baseinfo-ptr))
 (define-upcast (enuminfo _enuminfo-ptr) (baseinfo _baseinfo-ptr))
 (define-upcast (valueinfo _valueinfo-ptr) (baseinfo _baseinfo-ptr))
+(define-upcast (interfaceinfo _interfaceinfo-ptr) (baseinfo _baseinfo-ptr))
 
 ;;;; function type
 
@@ -542,6 +545,20 @@
 
 (provide class-methods)
 
+(ffi-wrap "g_object_info_get_n_interfaces"
+	  (_gobjinfo-ptr -> _gint))
+
+(ffi-wrap "g_object_info_get_interface"
+	  (_gobjinfo-ptr _gint -> _interfaceinfo-ptr))
+
+(define g-object-info-get-interface-unref
+  (unref-baseinfo g-object-info-get-interface interfaceinfo->baseinfo))
+
+(define-enumerator->list class-interfaces
+  g-object-info-get-n-interfaces g-object-info-get-interface-unref () ())
+
+(provide class-interfaces)
+
 ;;;; registered type
 ;
 ;(ffi-wrap "g_registered_type_info_get_type_name"
@@ -590,3 +607,37 @@
 
 (define/provide (enumeration-name enum-info)
   (g-base-info-get-name (enuminfo->baseinfo enum-info)))
+
+;;;; iface type
+
+(define/provide interface-name
+  (compose g-base-info-get-name interfaceinfo->baseinfo))
+
+(ffi-wrap "g_interface_info_get_n_prerequisites"
+	  (_interfaceinfo-ptr -> _gint))
+
+(ffi-wrap "g_interface_info_get_prerequisite"
+	  (_interfaceinfo-ptr _gint -> _baseinfo-ptr))
+
+(define g-interface-info-get-prerequisite-unref
+  (compose interface-info (unref-baseinfo g-interface-info-get-prerequisite)))
+
+(define-enumerator->list interface-deps
+  g-interface-info-get-n-prerequisites g-interface-info-get-prerequisite-unref
+  () ())
+
+(provide interface-deps)
+
+(ffi-wrap "g_interface_info_get_n_methods"
+	  (_interfaceinfo-ptr -> _gint))
+
+(ffi-wrap "g_interface_info_get_method"
+	  (_interfaceinfo-ptr _gint -> _functioninfo-ptr))
+
+(define g-interface-info-get-method-unref
+  (unref-baseinfo g-interface-info-get-method funcinfo->baseinfo))
+
+(define-enumerator->list interface-methodes
+  g-interface-info-get-n-methods g-interface-info-get-method-unref () ())
+
+(provide interface-methodes)
