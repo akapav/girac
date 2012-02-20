@@ -45,16 +45,19 @@
 
 (define _gint _int)
 (define _gboolean _gint)
+(define _gsize _ulong)
 (define _typelib-ptr (_cpointer/null 'GITypelib))
 (define _repos-ptr (_cpointer/null 'GIRepository))
 (define _baseinfo-ptr (_cpointer/null 'GIBaseInfo))
 (define _gobjinfo-ptr (_cpointer/null 'GObjectInfo))
 (define _functioninfo-ptr (_cpointer 'GIFunctionInfo))
-(define _callableinfo-ptr (_cpointer 'GIClaalbleInfo))
+(define _callableinfo-ptr (_cpointer 'GICallableInfo))
 (define _typeinfo-ptr (_cpointer 'GITypeInfo))
 (define _arginfo-ptr (_cpointer 'GIArgInfo))
 (define _structinfo-ptr (_cpointer 'GIStructInfo))
 (define _registered-ptr (_cpointer 'GIREgisteredTypeInfo))
+(define _enuminfo-ptr (_cpointer 'GIEnumInfo))
+(define _valueinfo-ptr (_cpointer 'GIValueInfo))
 (define _gerror-ptr (_cpointer/null 'Gerror))
 (define _gerror-ptr-ptr (_cpointer/null _gerror-ptr))
 
@@ -143,7 +146,10 @@
 ;;;
 (gir-base-casts
  (function _functioninfo-ptr)
- (object _gobjinfo-ptr))
+ (object _gobjinfo-ptr)
+ (struct _structinfo-ptr)
+ (enum _enuminfo-ptr)
+ (flags _enuminfo-ptr))
 
 (define-for-syntax (upcast-name dsym usym)
   (string->symbol
@@ -232,10 +238,16 @@
 (ffi-wrap "g_base_info_get_type"
 	  (_baseinfo-ptr -> _gint))
 
+(ffi-wrap "g_base_info_get_name"
+	  (_baseinfo-ptr -> _string))
+
 (define-upcast (typeinfo _typeinfo-ptr) (baseinfo _baseinfo-ptr))
 (define-upcast (arginfo _arginfo-ptr) (baseinfo _baseinfo-ptr))
 (define-upcast (gobjinfo _gobjinfo-ptr) (baseinfo _baseinfo-ptr))
 (define-upcast (funcinfo _functioninfo-ptr) (baseinfo _baseinfo-ptr))
+(define-upcast (structinfo _structinfo-ptr) (baseinfo _baseinfo-ptr))
+(define-upcast (enuminfo _enuminfo-ptr) (baseinfo _baseinfo-ptr))
+(define-upcast (valueinfo _valueinfo-ptr) (baseinfo _baseinfo-ptr))
 
 ;;;; function type
 
@@ -529,3 +541,52 @@
   g-object-info-get-n-methods g-object-info-get-method-unref () ())
 
 (provide class-methods)
+
+;;;; registered type
+;
+;(ffi-wrap "g_registered_type_info_get_type_name"
+;	  (_registered-ptr -> _string))
+;
+;(define-upcast (structinfo _structinfo-ptr) (registeredinfo _registered-ptr))
+
+;;;; struct type
+
+(define/provide (struct-name struct-info)
+  (g-base-info-get-name (structinfo->baseinfo struct-info)))
+
+(ffi-wrap "g_struct_info_get_size"
+	  (_structinfo-ptr -> _gsize))
+
+(define/provide struct-size g-struct-info-get-size)
+
+(ffi-wrap "g_struct_info_is_foreign"
+	  (_structinfo-ptr -> _gboolean))
+
+(define/provide (struct-is-foregin? struct-info)
+  (gbool->bool (g-struct-info-is-foreign struct-info)))
+
+;;;; enum type
+
+(ffi-wrap "g_enum_info_get_n_values"
+	  (_enuminfo-ptr -> _gint))
+
+(ffi-wrap "g_enum_info_get_value"
+	  (_enuminfo-ptr _gint -> _valueinfo-ptr))
+
+(define g-enum-info-get-value-unref
+  (unref-baseinfo g-enum-info-get-value valueinfo->baseinfo))
+
+(define-enumerator->list
+  enum-list g-enum-info-get-n-values g-enum-info-get-value-unref () ())
+
+(ffi-wrap "g_value_info_get_value"
+	  (_valueinfo-ptr -> _int64))
+
+(define/provide (enumeration-list enum-info)
+  (map (lambda (val-info)
+	 (list (g-base-info-get-name (valueinfo->baseinfo val-info))
+	       (g-value-info-get-value val-info)))
+       (enum-list enum-info)))
+
+(define/provide (enumeration-name enum-info)
+  (g-base-info-get-name (enuminfo->baseinfo enum-info)))

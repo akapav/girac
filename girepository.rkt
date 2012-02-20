@@ -28,7 +28,7 @@
 	       (gir-class "GObject" #f #f #t '()))
     env))
 
-(define (empty-repository) (gir-repository '() '()))
+(define (empty-repository) (gir-repository '() '() '() '()))
 
 ;;; 
 
@@ -42,12 +42,18 @@
 (struct gir-function
 	(symbol type throwable? return-type arguments))
 
+(struct gir-enum
+	(name values))
+
+(struct gir-struct
+	(name size is-foregin?))
+
 (struct gir-class
 	(name parent register-function abstract? methods)
 	#:mutable)
 
 (struct gir-repository
-	(classes functions)
+	(classes functions structs enums)
 	#:mutable
 	#:transparent)
 
@@ -55,7 +61,11 @@
   (let ((type-iface~ (gir:baseinfo-downcast type-iface)))
     (cond
      ((gir:type-object? type-iface)
-      (list tag (gir:class-name type-iface~)))
+      (list 'class (gir:class-name type-iface~)))
+     ((gir:type-struct? type-iface)
+      (list 'struct (gir:struct-name type-iface~)))
+     ((or (gir:type-enum? type-iface) (gir:type-flags? type-iface))
+      (list 'enum (gir:enumeration-name type-iface~)))
      (else (list 'not-supported-yet (gir:get-type type-iface))))))
 
 (define (load-type type type-env)
@@ -66,6 +76,33 @@
 		  (list tag tag))
 	      (gir:type->string type)
 	      (gir:type-is-pointer? type))))
+
+(define (load-argument arg type-env)
+  (gir-argument (load-type (gir:argument-type arg) type-env)
+		(gir:argument-client-allocates? arg)
+		(gir:argument-is-optional? arg)
+		(gir:argument-is-nullable? arg)
+		(gir:argument-ownership-transfer arg)))
+
+(define (load-enum enum type-env)
+  (let* ((name (string-append "enum:"
+			      (gir:enumeration-name enum)))
+	 (in-hash (hash-ref type-env name #f)))
+    (or in-hash
+	(let ((genum (gir-enum name
+			       (gir:enumeration-list enum))))
+	  (hash-set! type-env name genum)
+	  genum))))
+
+(define (load-struct str type-env)
+  (let* ((name (gir:struct-name str))
+	 (in-hash (hash-ref type-env name #f)))
+    (or in-hash
+	(let ((gstr (gir-struct name
+				(gir:struct-size str)
+				(gir:struct-is-foregin? str))))
+	  (hash-set! type-env name gstr)
+	  gstr))))
 
 (define (load-class cls type-env)
   (unless cls (error 'unknown-class))
@@ -83,13 +120,14 @@
 	  gcls))))
 
 (define (load-function fn type-env)
-;  (printf ">> ~a~%" (gir:function-symbol fn))
   (let ((clbl (gir:function->callable fn)))
     (gir-function (gir:function-symbol fn)
 		  (gir:function-type fn)
 		  (gir:function-throwable? fn)
 		  (load-type (gir:callable-return-type clbl) type-env)
-		  #f)))
+		  (map (lambda (arg)
+			 (load-argument arg type-env))
+		       (gir:callable-arguments clbl)))))
 
 (define (load-gir gir type-env repos (version #f))
   (gir:repository-require gir version)
@@ -101,7 +139,15 @@
 		       (gir-repository-classes repos)))
 	  ((gir:type-function? info)
 	   (push/list! (load-function info~ type-env)
-		       (gir-repository-functions repos))))))
+		       (gir-repository-functions repos)))
+	  ((gir:type-struct? info)
+	   (push/list! (load-struct info~ type-env)
+		       (gir-repository-structs repos)))
+	  ((or (gir:type-enum? info) (gir:type-flags? info))
+	   (push/list! (load-enum info~ type-env)
+		       (gir-repository-enums repos)))
+		   
+)))
   (values repos type-env))
 
 (define (load-girs girs)
@@ -115,13 +161,30 @@
   (when (gir-type-pointer? type)
     (printf "*")))
 
+(define (display-arg arg)
+  (display-type (gir-argument-type arg)))
+
 (define (display-function fn)
-  (printf "~a :: -> " (gir-function-symbol fn))
+  (printf "~a :: ( " (gir-function-symbol fn))
+  (for ((arg (gir-function-arguments fn)))
+       (display-arg arg) (printf " "))
+  (printf ") -> ")
   (display-type (gir-function-return-type fn))
   (printf "~%")
   (printf "type: ~a throwable: ~a~%~%"
 	  (gir-function-type fn)
 	  (if (gir-function-throwable? fn) "yes" "no")))
+
+(define (display-enum enum)
+  (printf "enum: ~a values: ~a~%~%"
+	  (gir-enum-name enum)
+	  (gir-enum-values enum)))
+
+(define (display-struct str)
+  (printf "struct: ~a size: ~a foregin: ~a~%~%"
+	  (gir-struct-name str)
+	  (gir-struct-size str)
+	  (if (gir-struct-is-foregin? str) "yes" "no")))
 
 (define (display-class cls)
   (printf
@@ -141,7 +204,11 @@
   (for ((cls (gir-repository-classes repos)))
        (display-class cls))
   (for ((fn (gir-repository-functions repos)))
-       (display-function fn)))
+       (display-function fn))
+  (for ((str (gir-repository-structs repos)))
+       (display-struct str))
+  (for ((enum (gir-repository-enums repos)))
+       (display-enum enum)))
 
 (define (verify-types repos type-env)
   (for ((cls (gir-repository-classes repos)))
@@ -171,64 +238,8 @@
 			   ("cairo" "1.0")
 			   ("xlib" "2.0")
 			   ))))
-  (display-repos repos)
-; (verify-types repos type-env)
+ (display-repos repos)
+ (verify-types repos type-env)
   )
 
-;; (let ((type-env (basic-env)))
-;;   (let-values (((repos type-env) (load-gir "Gdk" type-env)))
-;;     (let-values (((repos type-env) (load-gir "Gtk" type-env repos)))
-;;       (verify-types repos type-env))))
-;; ;      (display-repos repos))))
-
-;;;; todo: to be removed!!!!
-;; (define (dump-fn fn)
-;;   (let* ((fn (gir:baseinfo-downcast fn))
-;; 	 (clbl (gir:function->callable fn)))
-;;     (displayln
-;;      (list
-;;       (gir:function-symbol fn)
-;;       (gir:foo fn)
-;;       (gir:function-type fn)
-;;       (gir:function-throwable? fn)
-;;       (let ((rt (gir:callable-return-type clbl)))
-;; 	(list (let ((iface (gir:type-interface rt)))
-;; 		(if iface (gir:get-type iface) '_))
-;; 	      (gir:type-tag rt)
-;; 	      (gir:type->string rt)
-;; 	      (gir:type-is-pointer? rt)))
-;;       (map (lambda (arg)
-;; 	     (list
-;; 	      (gir:argument-direction arg)
-;; 	      (if (gir:argument-client-allocates? arg)
-;; 		  'client-allocates
-;; 		  'server-allocates)
-;; 	      (if (gir:argument-is-optional? arg)
-;; 		  'optional
-;; 		  'mandatory)
-;; 	      (if (gir:argument-is-nullable? arg)
-;; 		  'nullable
-;; 		  'not-nullable)
-;; 	      (if (gir:argument-is-return-value? arg)
-;; 		  'return-value
-;; 		  'isnt-return-value)
-;; 	      (gir:argument-ownership-transfer arg)))
-;; 	   (gir:callable-arguments clbl))))))
-
-;; (define (dump-obj obj)
-;;   (let ((obj (gir:baseinfo-downcast obj)))
-;;     (displayln
-;;      (list
-;;       (gir:class-name obj)
-;;       (gir:class-register-function obj)
-;;       (gir:class-is-abstract? obj)
-;;       (gir:class-name (gir:class-parent obj))
-;;       (map gir:function-symbol (gir:class-methods obj))))))
-
-;; (define (do-gir gir)
-;;   (gir:repository-require gir)
-;;   (for((obj (filter gir:type-object? (gir:repository-info-list gir))))
-;;       (dump-obj obj)))
-
-;; ;(do-gir "Gtk")
 (collect-garbage)
