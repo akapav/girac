@@ -184,14 +184,30 @@
 
 ;; todo: clumsy hack with malloc for error pointer -- see how to
 ;; allocate it on the stack
-(define/provide repository-require
+(define/provide (repository-require name (version #f))
+  (unless (let ((err (cast
+		      (malloc 'atomic (ctype-sizeof _gerror-ptr))
+		      _pointer
+		      _gerror-ptr-ptr)))
+	    (g-irepository-require #f name version 0 err))
+    (displayln "load error")))
+
+(ffi-wrap "g_irepository_get_dependencies"
+	  (_repos-ptr _string -> (_cpointer _string)))
+
+(define/provide repository-dependencies
   (lambda (name)
-    (unless (let ((err (cast
-			(malloc 'atomic (ctype-sizeof _gerror-ptr))
-			_pointer
-			_gerror-ptr-ptr)))
-	      (g-irepository-require #f name #f 0 err))
-      (displayln "load error"))))
+    (let ((deps (g-irepository-get-dependencies #f name)))
+      (let loop ((ndx 0) (acc '()))
+	(let ((str (ptr-ref deps _string ndx)))
+	  (free (cast (ptr-ref deps _string ndx)
+		      (_cpointer _string) _pointer))
+	  (if str
+	      (loop (add1 ndx) (cons str acc))
+	      (let ((re (pregexp "(.*)-([[:digit:]]+.[[:digit:]]+)$")))
+		(free deps)
+		(map (lambda (str)
+		       (cdr (regexp-match re str))) acc))))))))
 
 ;;; find top level entries
 (ffi-wrap "g_irepository_get_n_infos"
@@ -207,7 +223,8 @@
 
 ;;; return a list of top level entries (as _baseinfo-ptr)
 (define-enumerator->list
-  repository-info-list g-irepository-get-n-infos g-irepository-get-info-unref (#f) (#f))
+  repository-info-list g-irepository-get-n-infos g-irepository-get-info-unref
+  (#f) (#f))
 
 (provide repository-info-list)
 
@@ -236,7 +253,7 @@
 (ffi-wrap "g_function_info_get_flags"
 	  ( _functioninfo-ptr -> _int))
 
-(define/provide foo g-function-info-get-flags)
+;(define/provide foo g-function-info-get-flags)
 
 (define/provide (function-throwable? func-info)
   (not (zero? (bitwise-and (g-function-info-get-flags func-info) 32))))
@@ -304,7 +321,8 @@
 		  arginfo->baseinfo))
 
 (define-enumerator->list
-  callable-arguments g-callable-info-get-n-args g-callable-info-get-arg-unref () ())
+  callable-arguments g-callable-info-get-n-args g-callable-info-get-arg-unref
+  () ())
 
 (provide callable-arguments)
 

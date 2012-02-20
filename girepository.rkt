@@ -24,9 +24,11 @@
 ;;;
 (define (basic-env)
   (let ((env (make-hash)))
-    (hash-set! env "GObject"
-	       (gir-class "GObject" #f #f #f '()))
+    (hash-set! env "-GObject-"
+	       (gir-class "GObject" #f #f #t '()))
     env))
+
+(define (empty-repository) (gir-repository '() '()))
 
 ;;; 
 
@@ -49,18 +51,19 @@
 	#:mutable
 	#:transparent)
 
-(define (load-type-interface type-iface type-env)
+(define (load-type-interface tag type-iface type-env)
   (let ((type-iface~ (gir:baseinfo-downcast type-iface)))
     (cond
      ((gir:type-object? type-iface)
-      (gir:class-name type-iface~))
-     (else (list 'not-supported (gir:get-type type-iface))))))
+      (list tag (gir:class-name type-iface~)))
+     (else (list 'not-supported-yet (gir:get-type type-iface))))))
 
 (define (load-type type type-env)
-  (let ((iface (gir:type-interface type)))
+  (let ((tag (gir:type-tag type))
+	(iface (gir:type-interface type)))
     (gir-type (if iface
-		  (load-type-interface iface type-env)
-		  (gir:type-tag type))
+		  (load-type-interface tag iface type-env)
+		  (list tag tag))
 	      (gir:type->string type)
 	      (gir:type-is-pointer? type))))
 
@@ -70,7 +73,8 @@
 	 (in-hash (hash-ref type-env name #f)))
     (or in-hash
 	(let* ((gcls (gir-class name
-				(gir:class-name (gir:class-parent cls))
+				(if (string=? name "GObject") "-GObject-"
+				    (gir:class-name (gir:class-parent cls)))
 				(gir:class-register-function cls)
 				(gir:class-is-abstract? cls)
 				(map (lambda (mtd) (load-function mtd type-env))
@@ -87,8 +91,8 @@
 		  (load-type (gir:callable-return-type clbl) type-env)
 		  #f)))
 
-(define (load-gir gir type-env (repos (gir-repository '() '())))
-  (gir:repository-require gir)
+(define (load-gir gir type-env repos (version #f))
+  (gir:repository-require gir version)
   (for ((info (gir:repository-info-list gir)))
        (let ((info~ (gir:baseinfo-downcast info)))
 	 (cond
@@ -99,6 +103,11 @@
 	   (push/list! (load-function info~ type-env)
 		       (gir-repository-functions repos))))))
   (values repos type-env))
+
+(define (load-girs girs)
+  (for/fold ((repos (empty-repository)) (type-env (basic-env)))
+      ((gir girs))
+    (load-gir (first gir) type-env repos (second gir))))
 
 ;; todo: tmp
 (define (display-type type)
@@ -139,15 +148,38 @@
        (begin
 	 (let ((parent-name (gir-class-parent cls)))
 	   (unless (hash-ref type-env parent-name #f)
-	     (printf "~a is missing~%" parent-name))))))
-;	 (for ((mtd (gir-class-methods cls)))
-;	      (
+	     (printf "~a is missing~%" parent-name)))
+	 (let ((mtds (gir-class-methods cls)))
+	   (for ((mtd mtds))
+		(let ((rt (gir-type-tag/interface
+			   (gir-function-return-type mtd))))
+		  (when (eq? (first rt) 'interface)
+		    (unless (hash-ref type-env (second rt) #f)
+		      (printf "~a is missing~%" (second rt))))))))))
 
-(let ((type-env (basic-env)))
-  (let-values (((repos type-env) (load-gir "Gdk" type-env)))
-    (let-values (((repos type-env) (load-gir "Gtk" type-env repos)))
-      (verify-types repos type-env))))
-;      (display-repos repos))))
+(let-values (((repos type-env)
+	      (load-girs '(
+			   ("Gtk" #f)
+			   ("Atk" "1.0")
+			   ("GLib" "2.0")
+			   ("GModule" "2.0")
+			   ("GObject" "2.0")
+			   ("Gdk" "3.0") 
+			   ("GdkPixbuf" "2.0")
+			   ("Gio" "2.0")
+			   ("Pango" "1.0")
+			   ("cairo" "1.0")
+			   ("xlib" "2.0")
+			   ))))
+  (display-repos repos)
+; (verify-types repos type-env)
+  )
+
+;; (let ((type-env (basic-env)))
+;;   (let-values (((repos type-env) (load-gir "Gdk" type-env)))
+;;     (let-values (((repos type-env) (load-gir "Gtk" type-env repos)))
+;;       (verify-types repos type-env))))
+;; ;      (display-repos repos))))
 
 ;;;; todo: to be removed!!!!
 ;; (define (dump-fn fn)
