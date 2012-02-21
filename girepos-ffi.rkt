@@ -620,7 +620,7 @@
 	  (_interfaceinfo-ptr _gint -> _baseinfo-ptr))
 
 (define g-interface-info-get-prerequisite-unref
-  (compose interface-info (unref-baseinfo g-interface-info-get-prerequisite)))
+  (unref-baseinfo g-interface-info-get-prerequisite))
 
 (define-enumerator->list interface-deps
   g-interface-info-get-n-prerequisites g-interface-info-get-prerequisite-unref

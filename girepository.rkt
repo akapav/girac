@@ -20,12 +20,15 @@
 	 #'(setter obj (cons val (acc obj)))))
       ((_ val list) #'(set! list (cons val list))))))
 
+;;todo: duplicated code!!!
+(define-for-syntax (map-syntax env f stx)
+  (datum->syntax env (map f (syntax->datum stx))))
 
 ;;;
 (define (basic-env)
   (let ((env (make-hash)))
-    (hash-set! env "-GObject-"
-	       (gir-class "GObject" #f #f #t '() '()))
+    (hash-set! env (cons 'class "-GObject-")
+	       (gir-class (cons 'class "GObject") #f #f #t '() '()))
     env))
 
 (define (empty-repository) (gir-repository '() '() '() '() '()))
@@ -60,15 +63,37 @@
 	#:mutable
 	#:transparent)
 
+(define-for-syntax (mk-key-name name)
+  (string->symbol
+   (string-append (symbol->string name) "-key")))
+
+(define-syntax hash-key
+  (lambda (stx)
+    (syntax-case stx ()
+      ((_ key ...)
+       (with-syntax (((key-name ...)
+		      (map-syntax stx mk-key-name #'(key ...))))
+	 #'(begin
+	     (define (key-name val)
+	       (cons 'key val)) ... ))))))
+
+(hash-key
+ class
+ interface
+ struct
+ enum)
+
 (define (load-type-interface tag type-iface type-env)
   (let ((type-iface~ (gir:baseinfo-downcast type-iface)))
     (cond
      ((gir:type-object? type-iface)
-      (list 'class (gir:class-name type-iface~)))
+      (class-key (gir:class-name type-iface~)))
+     ((gir:type-interface? type-iface)
+      (interface-key (gir:interface-name type-iface~)))
      ((gir:type-struct? type-iface)
-      (list 'struct (gir:struct-name type-iface~)))
+      (struct-key (gir:struct-name type-iface~)))
      ((or (gir:type-enum? type-iface) (gir:type-flags? type-iface))
-      (list 'enum (gir:enumeration-name type-iface~)))
+      (enum-key (gir:enumeration-name type-iface~)))
      (else (list 'not-supported-yet (gir:get-type type-iface))))))
 
 (define (load-type type type-env)
@@ -88,8 +113,7 @@
 		(gir:argument-ownership-transfer arg)))
 
 (define (load-enum enum type-env)
-  (let* ((name (string-append "enum:"
-			      (gir:enumeration-name enum)))
+  (let* ((name (enum-key (gir:enumeration-name enum)))
 	 (in-hash (hash-ref type-env name #f)))
     (or in-hash
 	(let ((genum (gir-enum name
@@ -98,7 +122,7 @@
 	  genum))))
 
 (define (load-struct str type-env)
-  (let* ((name (gir:struct-name str))
+  (let* ((name (struct-key (gir:struct-name str)))
 	 (in-hash (hash-ref type-env name #f)))
     (or in-hash
 	(let ((gstr (gir-struct name
@@ -108,32 +132,39 @@
 	  gstr))))
 
 (define (load-interface iface type-env)
-  (let* ((name (string-append "iface:" (gir:interface-name iface)))
+  (let* ((name (interface-key (gir:interface-name iface)))
 	 (in-hash (hash-ref type-env name #f)))
     (or in-hash
 	(let ((giface
 	       (gir-interface name
 			      (map (lambda (mtd) (load-function mtd type-env))
 				   (gir:interface-methodes iface))
-			      (map gir:interface-name
+			      (map (lambda (obj)
+				     (let ((obj~ (gir:baseinfo-downcast obj)))
+				       (cond ((gir:type-interface? obj)
+					      (interface-key (gir:interface-name obj~)))
+					     ((gir:type-object? obj)
+					      (class-key (gir:class-name obj~)))
+					     (else (error "unsupported interface dep")))))
 				   (gir:interface-deps iface)))))
 	  (hash-set! type-env name giface)
 	  giface))))
 
 (define (load-class cls type-env)
   (unless cls (error 'unknown-class))
-  (let* ((name (gir:class-name cls))
+  (let* ((name (class-key (gir:class-name cls)))
 	 (in-hash (hash-ref type-env name #f)))
     (or in-hash
 	(let* ((gcls (gir-class name
-				(if (string=? name "GObject") "-GObject-"
-				    (gir:class-name (gir:class-parent cls)))
+				(class-key
+				 (if (string=? (cdr name) "GObject") "-GObject-"
+				     (gir:class-name (gir:class-parent cls))))
 				(gir:class-register-function cls)
 				(gir:class-is-abstract? cls)
 				(map (lambda (mtd) (load-function mtd type-env))
 				     (gir:class-methods cls))
 				(map (lambda (iface)
-				       (gir:interface-name iface))
+				       (interface-key (gir:interface-name iface)))
 				     (gir:class-interfaces cls))
 				)))
 	  (hash-set! type-env name gcls)
@@ -267,9 +298,9 @@
 (define (verify-function fn type-env)
   (let ((ver (lambda (ty)
 	       (let ((tt (gir-type-tag/interface ty)))
-		 (case (first tt)
+		 (case (car tt)
 		   ((struct interface class enum)
-		    (verify-name (second tt) type-env)))))))
+		    (verify-name tt type-env)))))))
     (ver (gir-function-return-type fn))
     (for ((arg (gir-function-arguments fn)))
 	 (ver (gir-argument-type arg)))))
@@ -279,6 +310,10 @@
        (verify-class cls type-env))
   (for ((iface (gir-repository-interfaces repos)))
        (verify-interface iface type-env))
+  (for ((str (gir-repository-structs repos)))
+       (verify-name (gir-struct-name str) type-env))
+  (for ((enum (gir-repository-enums repos)))
+       (verify-name (gir-enum-name enum) type-env))
   (for ((fn (gir-repository-functions repos)))
        (verify-function fn type-env)))
 
@@ -296,8 +331,12 @@
 			   ("cairo" "1.0")
 			   ("xlib" "2.0")
 			   ))))
-; (display-repos repos)
+ (display-repos repos)
  (verify-repos repos type-env)
+;(display type-env)
+; (verify-name (cons 'class "TlsConnection") type-env)
   )
 
 (collect-garbage)
+(collect-garbage)
+
