@@ -27,7 +27,7 @@
 ;;;
 (define (basic-env)
   (let ((env (make-hash)))
-    (hash-set! env (cons 'class "-GObject-")
+    (hash-set! env (cons 'class "-NO-CLASS-")
 	       (gir-class (cons 'class "GObject") #f #f #t '() '()))
     env))
 
@@ -150,6 +150,10 @@
 	  (hash-set! type-env name giface)
 	  giface))))
 
+(define (toplevel-class? name)
+  (ormap (lambda (tlc) (string=? name tlc))
+	 '("GObject" "GParam")))
+
 (define (load-class cls type-env)
   (unless cls (error 'unknown-class))
   (let* ((name (class-key (gir:class-name cls)))
@@ -157,7 +161,7 @@
     (or in-hash
 	(let* ((gcls (gir-class name
 				(class-key
-				 (if (string=? (cdr name) "GObject") "-GObject-"
+				 (if (toplevel-class? (cdr name))  "-NO-CLASS-"
 				     (gir:class-name (gir:class-parent cls))))
 				(gir:class-register-function cls)
 				(gir:class-is-abstract? cls)
@@ -165,8 +169,7 @@
 				     (gir:class-methods cls))
 				(map (lambda (iface)
 				       (interface-key (gir:interface-name iface)))
-				     (gir:class-interfaces cls))
-				)))
+				     (gir:class-interfaces cls)))))
 	  (hash-set! type-env name gcls)
 	  gcls))))
 
@@ -190,18 +193,18 @@
 		       (gir-repository-classes repos)))
 	  ((gir:type-interface? info)
 	   (push/list! (load-interface info~ type-env)
-		       (gir-repository-interfaces repos)))
+	  	       (gir-repository-interfaces repos)))
 	  ((gir:type-function? info)
 	   (push/list! (load-function info~ type-env)
-		       (gir-repository-functions repos)))
+	  	       (gir-repository-functions repos)))
 	  ((gir:type-struct? info)
 	   (push/list! (load-struct info~ type-env)
-		       (gir-repository-structs repos)))
+	  	       (gir-repository-structs repos)))
 	  ((or (gir:type-enum? info) (gir:type-flags? info))
 	   (push/list! (load-enum info~ type-env)
-		       (gir-repository-enums repos)))
+	  	       (gir-repository-enums repos)))
 		   
-)))
+	  )))
   (values repos type-env))
 
 (define (load-girs girs)
@@ -331,12 +334,9 @@
 			   ("cairo" "1.0")
 			   ("xlib" "2.0")
 			   ))))
- (display-repos repos)
- (verify-repos repos type-env)
-;(display type-env)
-; (verify-name (cons 'class "TlsConnection") type-env)
-  )
 
-(collect-garbage)
+  (display-repos repos)
+  (verify-repos repos type-env))
+
 (collect-garbage)
 
