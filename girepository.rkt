@@ -31,7 +31,7 @@
 	       (gir-class (cons 'class "GObject") #f #f #t '() '()))
     env))
 
-(define (empty-repository) (gir-repository '() '() '() '() '()))
+(define (empty-repository) (gir-repository '() '() '() '() '() '()))
 
 ;;; 
 
@@ -44,6 +44,9 @@
 
 (struct gir-function
 	(symbol type throwable? return-type arguments))
+
+(struct gir-callback
+	(name return-type arguments))
 
 (struct gir-enum
 	(name values))
@@ -59,7 +62,7 @@
 	#:mutable)
 
 (struct gir-repository
-	(classes functions structs enums interfaces)
+	(classes functions callbacks structs enums interfaces)
 	#:mutable
 	#:transparent)
 
@@ -81,7 +84,8 @@
  class
  interface
  struct
- enum)
+ enum
+ callback)
 
 (define (load-type-interface tag type-iface type-env)
   (let ((type-iface~ (gir:baseinfo-downcast type-iface)))
@@ -92,6 +96,8 @@
       (interface-key (gir:interface-name type-iface~)))
      ((gir:type-struct? type-iface)
       (struct-key (gir:struct-name type-iface~)))
+     ((gir:type-callback? type-iface)
+      (callback-key (gir:callable-name type-iface~)))
      ((or (gir:type-enum? type-iface) (gir:type-flags? type-iface))
       (enum-key (gir:enumeration-name type-iface~)))
      (else (list 'not-supported-yet (gir:get-type type-iface))))))
@@ -101,7 +107,7 @@
 	(iface (gir:type-interface type)))
     (gir-type (if iface
 		  (load-type-interface tag iface type-env)
-		  (list tag tag))
+		  tag )
 	      (gir:type->string type)
 	      (gir:type-is-pointer? type))))
 
@@ -183,6 +189,19 @@
 			 (load-argument arg type-env))
 		       (gir:callable-arguments clbl)))))
 
+(define (load-callback clbl type-env)
+  (let* ((name (callback-key (gir:callable-name clbl)))
+	 (in-hash (hash-ref type-env name #f)))
+    (or in-hash
+	(let ((gcbck
+	       (gir-callback name
+			     (load-type (gir:callable-return-type clbl) type-env)
+			     (map (lambda (arg)
+				    (load-argument arg type-env))
+				  (gir:callable-arguments clbl)))))
+	  (hash-set! type-env name gcbck)
+	  gcbck))))
+
 (define (load-gir gir type-env repos (version #f))
   (gir:repository-require gir version)
   (for ((info (gir:repository-info-list gir)))
@@ -195,8 +214,13 @@
 	   (push/list! (load-interface info~ type-env)
 	  	       (gir-repository-interfaces repos)))
 	  ((gir:type-function? info)
+	   ;;todo: add to function a canonic name (not only a symbol)
+	   ;; (displayln (gir:base-name info))
 	   (push/list! (load-function info~ type-env)
 	  	       (gir-repository-functions repos)))
+	  ((gir:type-callback? info)
+	   (push/list! (load-callback info~ type-env)
+		       (gir-repository-callbacks repos)))
 	  ((gir:type-struct? info)
 	   (push/list! (load-struct info~ type-env)
 	  	       (gir-repository-structs repos)))
@@ -231,6 +255,14 @@
   (printf "type: ~a throwable: ~a~%~%"
 	  (gir-function-type fn)
 	  (if (gir-function-throwable? fn) "yes" "no")))
+
+(define (display-callback cbck)
+  (printf "callback: ~a :: ( " (gir-callback-name cbck))
+  (for ((arg (gir-callback-arguments cbck)))
+       (display-arg arg) (printf " "))
+  (printf ") -> ")
+  (display-type (gir-callback-return-type cbck))
+  (printf "~%"))
 
 (define (display-enum enum)
   (printf "enum: ~a values: ~a~%~%"
@@ -273,6 +305,8 @@
        (display-interface cls))
   (for ((fn (gir-repository-functions repos)))
        (display-function fn))
+  (for ((fn (gir-repository-callbacks repos)))
+       (display-callback fn))
   (for ((str (gir-repository-structs repos)))
        (display-struct str))
   (for ((enum (gir-repository-enums repos)))
@@ -301,11 +335,23 @@
 (define (verify-function fn type-env)
   (let ((ver (lambda (ty)
 	       (let ((tt (gir-type-tag/interface ty)))
-		 (case (car tt)
-		   ((struct interface class enum)
-		    (verify-name tt type-env)))))))
+		 (when (pair? tt)
+		   (case (car tt)
+		     ((struct interface class enum callback)
+		      (verify-name tt type-env))))))))
     (ver (gir-function-return-type fn))
     (for ((arg (gir-function-arguments fn)))
+	 (ver (gir-argument-type arg)))))
+
+(define (verify-callback cbck type-env)
+  (let ((ver (lambda (ty)
+	       (let ((tt (gir-type-tag/interface ty)))
+		 (when (pair? tt)
+		   (case (car tt)
+		     ((struct interface class enum callback)
+		      (verify-name tt type-env))))))))
+    (ver (gir-callback-return-type cbck))
+    (for ((arg (gir-callback-arguments cbck)))
 	 (ver (gir-argument-type arg)))))
 
 (define (verify-repos repos type-env)
@@ -318,7 +364,9 @@
   (for ((enum (gir-repository-enums repos)))
        (verify-name (gir-enum-name enum) type-env))
   (for ((fn (gir-repository-functions repos)))
-       (verify-function fn type-env)))
+       (verify-function fn type-env))
+  (for ((fn (gir-repository-callbacks repos)))
+       (verify-callback fn type-env)))
 
 (let-values (((repos type-env)
 	      (load-girs '(

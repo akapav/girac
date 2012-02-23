@@ -147,6 +147,7 @@
 ;;;
 (gir-base-casts
  (function _functioninfo-ptr)
+ (callback _callableinfo-ptr)
  (object _gobjinfo-ptr)
  (struct _structinfo-ptr)
  (enum _enuminfo-ptr)
@@ -243,10 +244,13 @@
 (ffi-wrap "g_base_info_get_name"
 	  (_baseinfo-ptr -> _string))
 
+(define/provide base-name g-base-info-get-name)
+
 (define-upcast (typeinfo _typeinfo-ptr) (baseinfo _baseinfo-ptr))
 (define-upcast (arginfo _arginfo-ptr) (baseinfo _baseinfo-ptr))
 (define-upcast (gobjinfo _gobjinfo-ptr) (baseinfo _baseinfo-ptr))
 (define-upcast (funcinfo _functioninfo-ptr) (baseinfo _baseinfo-ptr))
+(define-upcast (callableinfo _callableinfo-ptr) (baseinfo _baseinfo-ptr))
 (define-upcast (structinfo _structinfo-ptr) (baseinfo _baseinfo-ptr))
 (define-upcast (enuminfo _enuminfo-ptr) (baseinfo _baseinfo-ptr))
 (define-upcast (valueinfo _valueinfo-ptr) (baseinfo _baseinfo-ptr))
@@ -317,6 +321,9 @@
 ;;;; callable type
 
 (define-upcast (function _functioninfo-ptr) (callable _callableinfo-ptr))
+
+(define/provide callable-name
+  (compose g-base-info-get-name callableinfo->baseinfo))
 
 (ffi-wrap "g_callable_info_get_return_type"
 	  ( _callableinfo-ptr -> _typeinfo-ptr))
