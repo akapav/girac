@@ -368,23 +368,17 @@
   (for ((fn (gir-repository-callbacks repos)))
        (verify-callback fn type-env)))
 
-(let-values (((repos type-env)
-	      (load-girs '(
-			   ("Gtk" #f)
-			   ("Atk" "1.0")
-			   ("GLib" "2.0")
-			   ("GModule" "2.0")
-			   ("GObject" "2.0")
-			   ("Gdk" "3.0") 
-			   ("GdkPixbuf" "2.0")
-			   ("Gio" "2.0")
-			   ("Pango" "1.0")
-			   ("cairo" "1.0")
-			   ("xlib" "2.0")
-			   ))))
+;;;
+(define (main name #:version (version #f) #:path (path #f))
+  (when path
+    (gir:repository-prepend-path path))
+  (gir:repository-require name)
+  (let ((deps (gir:repository-dependencies name)))
+    (printf "deps: ~a~%" deps)
+    (let-values (((repos type-env)
+		  (load-girs (cons (list name version) deps))))
+      (display-repos repos)
+      (verify-repos repos type-env)
+      (collect-garbage))))
 
-  (display-repos repos)
-  (verify-repos repos type-env))
-
-(collect-garbage)
-
+(main "Lg" #:path "/home/aka/devel/girac/0/code")
