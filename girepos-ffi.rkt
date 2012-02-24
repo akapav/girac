@@ -594,6 +594,22 @@
 (define/provide (struct-is-foregin? struct-info)
   (gbool->bool (g-struct-info-is-foreign struct-info)))
 
+(ffi-wrap "g_struct_info_get_n_methods"
+	  (_structinfo-ptr -> _gint))
+
+(ffi-wrap "g_struct_info_get_method"
+	  (_structinfo-ptr _gint -> _functioninfo-ptr))
+
+(define g-struct-info-get-method-unref
+  (unref-baseinfo g-struct-info-get-method
+		  funcinfo->baseinfo))
+
+(define-enumerator->list
+  struct-methods g-struct-info-get-n-methods g-struct-info-get-method-unref
+  () ())
+
+(provide struct-methods)
+
 ;;;; enum type
 
 (ffi-wrap "g_enum_info_get_n_values"

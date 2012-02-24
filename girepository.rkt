@@ -52,7 +52,7 @@
 	(name values))
 
 (struct gir-struct
-	(name size is-foregin?))
+	(name methods size is-foregin?))
 
 (struct gir-interface
 	(name methods deps))
@@ -135,6 +135,8 @@
   (with-hashed-type
    (name (struct-key (gir:struct-name str))) type-env
    (gir-struct name
+	       (map (lambda (mtd) (load-function mtd type-env))
+		    (gir:struct-methods str))
 	       (gir:struct-size str)
 	       (gir:struct-is-foregin? str))))
 
@@ -259,10 +261,14 @@
 	  (gir-enum-values enum)))
 
 (define (display-struct str)
-  (printf "struct: ~a size: ~a foregin: ~a~%~%"
+  (printf "struct: ~a size: ~a foregin: ~a~%"
 	  (gir-struct-name str)
 	  (gir-struct-size str)
-	  (if (gir-struct-is-foregin? str) "yes" "no")))
+	  (if (gir-struct-is-foregin? str) "yes" "no"))
+  (printf "methods (~a):~%" (length (gir-struct-methods str)))
+  (for ((mtd (gir-struct-methods str)))
+       (display-function mtd))
+  (printf "------------------~%"))
 
 (define (display-interface iface)
   (printf "interface: ~a~%" (gir-interface-name iface))
@@ -321,6 +327,11 @@
   (for ((iface (gir-interface-deps iface)))
        (verify-name iface type-env)))
 
+(define (verify-struct str type-env)
+  (verify-name (gir-struct-name str) type-env)
+  (for ((mtd (gir-struct-methods str)))
+       (verify-function mtd type-env)))
+
 (define (verify-function fn type-env)
   (let ((ver (lambda (ty)
 	       (let ((tt (gir-type-tag/interface ty)))
@@ -349,7 +360,7 @@
   (for ((iface (gir-repository-interfaces repos)))
        (verify-interface iface type-env))
   (for ((str (gir-repository-structs repos)))
-       (verify-name (gir-struct-name str) type-env))
+       (verify-struct str type-env))
   (for ((enum (gir-repository-enums repos)))
        (verify-name (gir-enum-name enum) type-env))
   (for ((fn (gir-repository-functions repos)))
@@ -370,4 +381,4 @@
       (verify-repos repos type-env)
       (collect-garbage))))
 
-(main "Gtk" #:path "/home/aka/devel/girac/0/code")
+(main "Gtk")
