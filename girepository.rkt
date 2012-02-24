@@ -87,6 +87,14 @@
  enum
  callback)
 
+(define-syntax-rule (with-hashed-type (key exp) hash val-exp)
+  (let* ((key exp)
+	 (in-hash (hash-ref hash key #f)))
+    (or in-hash
+	(let ((val val-exp))
+	  (hash-set! hash key val)
+	  val))))
+
 (define (load-type-interface tag type-iface type-env)
   (let ((type-iface~ (gir:baseinfo-downcast type-iface)))
     (cond
@@ -119,65 +127,50 @@
 		(gir:argument-ownership-transfer arg)))
 
 (define (load-enum enum type-env)
-  (let* ((name (enum-key (gir:enumeration-name enum)))
-	 (in-hash (hash-ref type-env name #f)))
-    (or in-hash
-	(let ((genum (gir-enum name
-			       (gir:enumeration-list enum))))
-	  (hash-set! type-env name genum)
-	  genum))))
+  (with-hashed-type
+   (name (enum-key (gir:enumeration-name enum))) type-env
+   (gir-enum name (gir:enumeration-list enum))))
 
 (define (load-struct str type-env)
-  (let* ((name (struct-key (gir:struct-name str)))
-	 (in-hash (hash-ref type-env name #f)))
-    (or in-hash
-	(let ((gstr (gir-struct name
-				(gir:struct-size str)
-				(gir:struct-is-foregin? str))))
-	  (hash-set! type-env name gstr)
-	  gstr))))
+  (with-hashed-type
+   (name (struct-key (gir:struct-name str))) type-env
+   (gir-struct name
+	       (gir:struct-size str)
+	       (gir:struct-is-foregin? str))))
 
 (define (load-interface iface type-env)
-  (let* ((name (interface-key (gir:interface-name iface)))
-	 (in-hash (hash-ref type-env name #f)))
-    (or in-hash
-	(let ((giface
-	       (gir-interface name
-			      (map (lambda (mtd) (load-function mtd type-env))
-				   (gir:interface-methodes iface))
-			      (map (lambda (obj)
-				     (let ((obj~ (gir:baseinfo-downcast obj)))
-				       (cond ((gir:type-interface? obj)
-					      (interface-key (gir:interface-name obj~)))
-					     ((gir:type-object? obj)
-					      (class-key (gir:class-name obj~)))
-					     (else (error "unsupported interface dep")))))
-				   (gir:interface-deps iface)))))
-	  (hash-set! type-env name giface)
-	  giface))))
+  (with-hashed-type
+   (name (interface-key (gir:interface-name iface))) type-env
+   (gir-interface name
+		  (map (lambda (mtd) (load-function mtd type-env))
+		       (gir:interface-methodes iface))
+		  (map (lambda (obj)
+			 (let ((obj~ (gir:baseinfo-downcast obj)))
+			   (cond ((gir:type-interface? obj)
+				  (interface-key (gir:interface-name obj~)))
+				 ((gir:type-object? obj)
+				  (class-key (gir:class-name obj~)))
+				 (else (error "unsupported interface dep")))))
+		       (gir:interface-deps iface)))))
 
 (define (toplevel-class? name)
   (ormap (lambda (tlc) (string=? name tlc))
 	 '("GObject" "GParam")))
 
 (define (load-class cls type-env)
-  (unless cls (error 'unknown-class))
-  (let* ((name (class-key (gir:class-name cls)))
-	 (in-hash (hash-ref type-env name #f)))
-    (or in-hash
-	(let* ((gcls (gir-class name
-				(class-key
-				 (if (toplevel-class? (cdr name))  "-NO-CLASS-"
-				     (gir:class-name (gir:class-parent cls))))
-				(gir:class-register-function cls)
-				(gir:class-is-abstract? cls)
-				(map (lambda (mtd) (load-function mtd type-env))
-				     (gir:class-methods cls))
-				(map (lambda (iface)
-				       (interface-key (gir:interface-name iface)))
-				     (gir:class-interfaces cls)))))
-	  (hash-set! type-env name gcls)
-	  gcls))))
+  (with-hashed-type
+   (name (class-key (gir:class-name cls))) type-env
+   (gir-class name
+	      (class-key
+	       (if (toplevel-class? (cdr name))  "-NO-CLASS-"
+		   (gir:class-name (gir:class-parent cls))))
+	      (gir:class-register-function cls)
+	      (gir:class-is-abstract? cls)
+	      (map (lambda (mtd) (load-function mtd type-env))
+		   (gir:class-methods cls))
+	      (map (lambda (iface)
+		     (interface-key (gir:interface-name iface)))
+		   (gir:class-interfaces cls)))))
 
 (define (load-function fn type-env)
   (let ((clbl (gir:function->callable fn)))
@@ -190,17 +183,13 @@
 		       (gir:callable-arguments clbl)))))
 
 (define (load-callback clbl type-env)
-  (let* ((name (callback-key (gir:callable-name clbl)))
-	 (in-hash (hash-ref type-env name #f)))
-    (or in-hash
-	(let ((gcbck
-	       (gir-callback name
-			     (load-type (gir:callable-return-type clbl) type-env)
-			     (map (lambda (arg)
-				    (load-argument arg type-env))
-				  (gir:callable-arguments clbl)))))
-	  (hash-set! type-env name gcbck)
-	  gcbck))))
+  (with-hashed-type
+   (name (callback-key (gir:callable-name clbl))) type-env
+   (gir-callback name
+		 (load-type (gir:callable-return-type clbl) type-env)
+		 (map (lambda (arg)
+			(load-argument arg type-env))
+		      (gir:callable-arguments clbl)))))
 
 (define (load-gir gir type-env repos (version #f))
   (gir:repository-require gir version)
@@ -381,4 +370,4 @@
       (verify-repos repos type-env)
       (collect-garbage))))
 
-(main "Lg" #:path "/home/aka/devel/girac/0/code")
+(main "Gtk" #:path "/home/aka/devel/girac/0/code")
