@@ -186,6 +186,11 @@
 ;;; at the moment, all functions work with the global (default)
 ;;; repository so #f (null) is always sent as a repository argument
 
+(ffi-wrap "g_irepository_prepend_search_path"
+	  (_string -> _void))
+
+(define/provide repository-prepend-path g-irepository-prepend-search-path)
+
 ;;; load a repository (typelib)
 (ffi-wrap "g_irepository_require"
 	  (_repos-ptr _string _string _int _gerror-ptr-ptr
@@ -209,8 +214,8 @@
     (let ((deps (g-irepository-get-dependencies #f name)))
       (let loop ((ndx 0) (acc '()))
 	(let ((str (ptr-ref deps _string ndx)))
-	  (free (cast (ptr-ref deps _string ndx)
-		      (_cpointer _string) _pointer))
+	  ;todo: memory leak
+	  ;(free (cast (ptr-ref deps _string ndx) (_cpointer _string) _pointer))
 	  (if str
 	      (loop (add1 ndx) (cons str acc))
 	      (let ((re (pregexp "(.*)-([[:digit:]]+.[[:digit:]]+)$")))
