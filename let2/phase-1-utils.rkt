@@ -1,13 +1,17 @@
 #lang racket
 
 (require ffi/unsafe/define
-         (for-meta 1 "names.rkt"))
+         (for-meta 1 "names.rkt"
+                     racket/match
+                     syntax/parse))
 
-(provide (for-syntax map-syntax-keyword
+(provide (for-meta 1 map-syntax-keyword
                      map-syntax-keyword/str
                      string-fun->symbol-fun
+                     decorate-id
                      lispify-string~
                      lispify-string
+                     optional-keyword-class
                      )
          define-naming-definer-for
          define-ffi-definers
@@ -33,32 +37,49 @@
   (define (string-fun->symbol-fun fun)
     (compose1 string->symbol fun symbol->string))
 
+  ;; Generate variations of an id with varying pre- and suffixes.
+  (define (decorate-id id . dec)
+    (define id-s (symbol->string (syntax->datum id)))
+    (datum->syntax id
+      (for/list ([d dec])
+        (string->symbol
+          (match d
+            [(list pre post) (string-append pre id-s post)]
+            [(cons pre post) (string-append pre id-s post)]
+            [post            (string-append id-s post)])))))
+
   (define lispify-string~ (string-fun->symbol-fun lispify-string))
 
   )
 
+(begin-for-syntax
+
+  ;; Probably a stupid hack - easily manufacture local optional keyword-tagged
+  ;; syntax classes for syntax-parse.
+
+  (define-syntax-rule (optional-keyword-class name marker pat alt)
+    (define-splicing-syntax-class name
+      (pattern (~seq marker pat))
+      (pattern (~seq) #:with pat alt)))
+)
+
 ;; For a form generated through (define-ffi-definer definer-name ...), generate
 ;; the corresponding form (definer-name/n ...), which takes only the the
 ;; external c-name and generates the internal one using the supplied [phase-1]
-;; function. The the internal form is CPS-d, to propagate the generated name.
+;; function. Inner form is CPS-d, to propagate the generated name.
 
-(define-syntax define-naming-definer-for
-  (lambda (stx)
-    (with-syntax ([(_ definer c-to-lisp-proc) stx])
-      (with-syntax ([definer/n
-                      (map-syntax-keyword/str
-                        #'definer
-                        (lambda (name) (string-append name "/n")))])
-      #'(define-syntax definer/n
-          (lambda (stx)
-            (syntax-case stx ()
-              [(_ c-name e (... ...) #:continue (k0 k1 (... ...)))
-               (with-syntax ([name (map-syntax-keyword #'c-name c-to-lisp-proc)])
-                 #'(begin
-                     (definer name e (... ...) #:c-id c-name)
-                     (k0 name k1 (... ...))))]
-              [(me c-name e (... ...))
-               #'(me c-name e (... ...) #:continue (void))])))))))
+(define-syntax (define-naming-definer-for stx)
+  (with-syntax ([(_ definer c-to-lisp-proc) stx])
+    (with-syntax ([(definer/n) (decorate-id #'definer "/n")])
+      #'(define-syntax (definer/n stx)
+          (syntax-case stx ()
+            [(_ c-name e (... ...) #:continue (k0 k1 (... ...)))
+             (with-syntax ([name (map-syntax-keyword #'c-name c-to-lisp-proc)])
+               #'(begin
+                   (definer name e (... ...) #:c-id c-name)
+                   (k0 name k1 (... ...))))]
+            [(me c-name e (... ...))
+             #'(me c-name e (... ...) #:continue (void))])))))
 
 ;; Create them in tandem. The topmost ffi-definer-introducer -- FOR NOW.
 
