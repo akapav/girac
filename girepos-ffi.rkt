@@ -207,21 +207,23 @@
     (displayln "load error")))
 
 (ffi-wrap "g_irepository_get_dependencies"
-	  (_repos-ptr _string -> (_cpointer _string)))
+	  (_repos-ptr _string -> (_cpointer/null _string)))
 
 (define/provide repository-dependencies
   (lambda (name)
     (let ((deps (g-irepository-get-dependencies #f name)))
-      (let loop ((ndx 0) (acc '()))
-	(let ((str (ptr-ref deps _string ndx)))
-	  ;todo: memory leak
-	  ;(free (cast (ptr-ref deps _string ndx) (_cpointer _string) _pointer))
-	  (if str
-	      (loop (add1 ndx) (cons str acc))
-	      (let ((re (pregexp "(.*)-([[:digit:]]+.[[:digit:]]+)$")))
-		(free deps)
-		(map (lambda (str)
-		       (cdr (regexp-match re str))) acc))))))))
+      (if deps
+	  (let loop ((ndx 0) (acc '()))
+	    (let ((str (ptr-ref deps _string ndx)))
+              ;todo: memory leak
+              ;(free (cast (ptr-ref deps _string ndx) (_cpointer _string) _pointer))
+	      (if str
+		  (loop (add1 ndx) (cons str acc))
+		  (let ((re (pregexp "(.*)-([[:digit:]]+.[[:digit:]]+)$")))
+		    (free deps)
+		    (map (lambda (str)
+			   (cdr (regexp-match re str))) acc)))))
+      '()))))
 
 ;;; find top level entries
 (ffi-wrap "g_irepository_get_n_infos"
