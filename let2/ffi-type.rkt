@@ -3,11 +3,13 @@
 (require ffi/unsafe
          "phase-1-utils.rkt"
          (for-syntax syntax/parse))
+(require (for-syntax syntax/parse/debug))
 
 (provide
   define-opaque-ptr
   define-opaque-ptr-hierarchy
-  _ptr-ptr/list/0)
+  _ptr-ptr/list/0
+  _bitmask/bits)
 
 
 ;;;; Our own version of tagged pointers. Goodies pending.
@@ -36,34 +38,32 @@
 
   (optional-keyword-class extends #:extends type:id #'_pointer)
 
+  ;; This got a little bit out of hand, dive into dox and shorten it.
   (define-splicing-syntax-class children
     (pattern (~seq #:children #:specialize spec-q:id
-                   ((spec-mark:expr child:id) ...))) ;; <- mark: literal?
+                   ((sa:atom* cid:id) ...))
+             #:with ((spec-a ... child:id) ...) #'((sa.e ... cid) ...))
     (pattern (~seq #:children (child:id ...)) #:attr spec-q #f
-             #:with (spec-mark:expr ...) #'())
+             #:with ((spec-a ...) ...) #'())
     (pattern (~seq) #:attr spec-q #f
              #:with (child:id ...) #'()
-             #:with (spec-mark:expr ...) #'()))
+             #:with ((spec-a ...) ...) #'())
+    )
 
   (syntax-parse stx
     [(_ name~ parent:extends c:children)
-
-     (with-syntax
-       ([(name?~) (decorate-id #'name~ "?")]
-        [splice-specializer
-          (if (attribute c.spec-q)
-            #'(define-syntax-rule (specialize p)
-                (case (c.spec-q p)
-                  [(c.spec-mark) (become! p c.child)]
-                  ...))
-            #'(define-syntax-rule (specialize p) (void)))])
-
-       #'(begin
-           splice-specializer
+     (with-syntax ([(name?~) (decorate-id #'name~ "?")])
+       #`(begin
            (define ptr-tag (name->type-tag 'name~))
 
            (define (genesis p)
-             (when p (cpointer-push-tag! p ptr-tag) (specialize p))
+             (when p
+               (cpointer-push-tag! p ptr-tag)
+               #,(if (attribute c.spec-q)
+                   #'(case (c.spec-q p)
+                       [(c.spec-a ...) (become! p c.child)]
+                       ...)
+                   #'(void)))
              p)
            (define name~
              (make-ctype parent.type
@@ -114,4 +114,11 @@
                      (free (ptr-ref p _pointer ndx))
                      (loop (add1 ndx) (cons elt acc)))
                    (begin (free p) (reverse acc)))))))))
+
+
+;; Like Racket's `_bitmask', but with bit positions.
+(define (_bitmask/bits bmsk)
+  (_bitmask (for/list ([x bmsk])
+              (if (integer? x) (arithmetic-shift 1 x) x))))
+
 

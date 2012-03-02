@@ -12,6 +12,7 @@
                      lispify-string~
                      lispify-string
                      optional-keyword-class
+                     atom*
                      )
          define-naming-definer-for
          define-ffi-definers
@@ -61,6 +62,11 @@
     (define-splicing-syntax-class name
       (pattern (~seq marker pat))
       (pattern (~seq) #:with pat alt)))
+
+  ;; Accept either a singleton or a list and expand to sequence.
+  (define-syntax-class atom*
+    (pattern (e ...))
+    (pattern e~ #:with (e ...) #'(e~)))
 )
 
 ;; For a form generated through (define-ffi-definer definer-name ...), generate
