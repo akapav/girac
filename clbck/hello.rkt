@@ -7,23 +7,23 @@
 
 (define (rc-hash-del! hash key)
   (let ((cnt (hash-ref hash key 0)))
-    (if (zero? cnt)
+    (if (= 1 cnt)
 	(hash-remove! hash key)
 	(hash-set! hash key (sub1 cnt)))))
 
 (define *callbacks* (make-hash))
 
 (define libgobject (ffi-lib "/usr/lib/libgobject-2.0"))
-(define libgtk (ffi-lib "/usr/lib/libgtk-3"))
 (define libhello (ffi-lib "./hello"))
 
 ;(define _callback-fn (_fun -> void))
 
-(define _callback-notify-fn (_fun #:keep (lambda (c) (rc-hash-add! *callbacks* c))
+(define _callback-notify-fn (_fun ;#:keep #t
 				  _pointer
 				  _pointer -> _void))
 
-(define _delete-event-fn (_fun _pointer
+(define _delete-event-fn (_fun ;#:keep #t
+			       _pointer
 			       _pointer
 			       _pointer -> ( ret : _int)
 			       -> (if ret 1 0)))
@@ -33,23 +33,32 @@
 						 _pointer
 						 _callback-notify-fn -> _pointer)))
 
-(define run (get-ffi-obj "run" libhello (_fun _pointer -> _void)))
+(define run (get-ffi-obj "run" libhello (_fun -> _void)))
 
 (define (callback fn type)
-  (rc-hash-add! *callbacks* fn)
-  (_gclosure-new
-   (cast fn type _pointer)
-   #f ;user data is ignored
-   (lambda _
-     (printf "delete callback: ~a~%" _)
-     (rc-hash-del! *callbacks* fn))))
+  (struct cback- (fn (notify #:mutable)))
+  (let* ((cback (cback- fn #f))
+	 (notify-cback (lambda _
+			 (printf "delete callback: ~a~%" _)
+			 (rc-hash-del! *callbacks* cback))))
+    (set-cback--notify! cback notify-cback)
+    (rc-hash-add! *callbacks* cback)
+    (_gclosure-new
+     (cast fn type _gcpointer)
+     #f ;user data is ignored
+     notify-cback)))
 
-(run (callback
-      (let ((cnt 3))
-	(lambda (a b c)
-	  (begin0
-	      (not (zero? cnt))
-	    (printf "~A~%" cnt)
-	    (collect-garbage)
-	    (set! cnt (sub1 cnt)))))
-      _delete-event-fn))
+(set-ffi-obj! "closure" libhello _pointer
+	      (callback
+	       (let ((cnt 3))
+		 (lambda (a b c)
+		   (begin0
+		       (not (zero? cnt))
+		     (printf "~A~%" cnt)
+		     (collect-garbage)
+		      (set! cnt (sub1 cnt)))))
+	       _delete-event-fn))
+
+(collect-garbage)
+
+(run)
