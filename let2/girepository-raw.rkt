@@ -20,15 +20,14 @@
 
 (define-opaque-ptr _typelib)
 (define-opaque-ptr _repo)
-(define-opaque-ptr _functioninfo)
-(define-opaque-ptr _registered)
 (define-opaque-ptr _gerror)
 
 (define-opaque-ptr-hierarchy
   _base-info
-  #:specialize g-base-info-get-type =>
-    ((1 13 14) _callable-info
-     #:specialize g-base-info-get-type =>
+  #:on-ingress (p => (register-finalizer p g-base-info-unref)) =>
+    #:specialize g-base-info-get-type
+    ((1 13 14) _callable-info =>
+	#:specialize g-base-info-get-type
         (1  _function-info)
         (13 _signal-info  )
         (14 _vfunc-info   ))
@@ -47,6 +46,8 @@
     (17 _arg-info       )
     (18 _type-info      )
   )
+
+(define hrrr '())
 
 ;;;; some random erorrs
 
@@ -71,9 +72,7 @@
 ;;;; repository functions
 
 ;;; unref function for all baseinfo derived types
-(define-libgir/n g_base_info_unref
-  (_fun _base-info -> _void)
-  #:wrap (deallocator))
+(define-libgir/n g_base_info_unref (_fun _base-info -> _void))
 
 ;;; at the moment, all functions work with the global (default)
 ;;; repository so #f (null) is always sent as a repository argument
@@ -95,8 +94,7 @@
 
 (define-enumerator->list
   irepository-get-infos
-  (g_irepository_get_info (_fun (_repo = #f) _string _int -> _base-info)
-                          #:wrap (allocator g-base-info-unref))
+  (g_irepository_get_info (_fun (_repo = #f) _string _int -> _base-info))
   (g_irepository_get_n_infos (_fun (_repo = #f) _string -> _int)))
 
 (define-libgir/n g_base_info_get_type (_fun _base-info -> _int))
@@ -105,7 +103,7 @@
 ;;;; function type
 
 (define _function-flags
-  (_bitmask/bits (sequentially
+  (_bitmask/bits (seq-labels
     method constructor getter setter wraps-vfunc throws)))
 
 (define-libgir/n g_function_info_get_symbol (_fun _function-info -> _string))
@@ -126,7 +124,7 @@
 ;;;; typeinfo type
 
 (define _typetag
-  (_enum (sequentially
+  (_enum (seq-labels
     void boolean
     int8 uint8 int16 uint16 int32 uint32 int64 uint64
     float double
@@ -156,9 +154,9 @@
 
 ;;;; arginfo type
 
-(define _direction (_enum (sequentially in out inout)))
+(define _direction (_enum (seq-labels in out inout)))
 
-(define _transfer (_enum (sequentially nothing container everything)))
+(define _transfer (_enum (seq-labels nothing container everything)))
 
 (define-libgir/n g_arg_info_get_direction (_fun _arg-info -> _direction))
 
@@ -212,7 +210,7 @@
   (g_enum_info_get_value (_fun _enum-info _int -> _value-info))
   (g_enum_info_get_n_values (_fun _enum-info -> _int)))
 
-(define-libgir/n g_value_info_get_value (_value-info -> _int64))
+(define-libgir/n g_value_info_get_value (_fun _value-info -> _int64))
 
 ;;;; iface type
 
@@ -225,5 +223,4 @@
   interface-info-get-methods
   (g_interface_info_get_method (_fun _interface-info _int -> _function-info))
   (g_interface_info_get_n_methods (_fun _interface-info -> _int)))
-
 

@@ -10,7 +10,7 @@
   define-opaque-ptr-hierarchy
   _ptr-ptr/list/0
   _bitmask/bits
-  sequentially)
+  seq-labels)
 
 
 ;;;; Our own version of tagged pointers. Goodies pending.
@@ -37,40 +37,57 @@
 
 (define-syntax (define-opaque-ptr stx)
 
-  (optional-keyword-class extends #:extends type:id #'_pointer)
-
   ;; This got a little bit out of hand, dive into dox and shorten it.
   (define-splicing-syntax-class children
-    (pattern (~seq #:children #:specialize spec-q:id
-                   ((sa:atom* cid:id) ...))
-             #:with ((spec-a ... child:id) ...) #'((sa.e ... cid) ...))
-    (pattern (~seq #:children (child:id ...)) #:attr spec-q #f
+;     #:attributes (spec-q (spec-a 1) (child 1))
+    (pattern (~seq #:children
+                   #:specialize spec-q:id
+;                    ((spec-a:atom* child:id) ...)))
+                   ((sa:atom* child:id) ...))
+             #:with ((spec-a ...) ...) #'((sa.e ...) ...))
+    (pattern (~seq #:children (child:id ...))
+             #:attr spec-q #f
+;              #:with (spec-a:atom* ...) #'())
              #:with ((spec-a ...) ...) #'())
     (pattern (~seq) #:attr spec-q #f
-             #:with (child:id ...) #'()
+             #:with (child ...) #'()
+;              #:with (spec-a:atom* ...) #'())
              #:with ((spec-a ...) ...) #'())
     )
 
   (syntax-parse stx
-    [(_ name~ parent:extends c:children)
+    [(_ name~
+        (~seq (~or (~optional (~seq #:extends parent:id)
+                              #:defaults ([parent #'_pointer]))
+                   (~optional (~seq #:on-ingress on-in:fun-fragment))
+                   (~optional (~seq #:on-outgress on-out:fun-fragment)))
+              ...)
+        ch:children)
+
      (with-syntax ([(name?~) (decorate-id #'name~ "?")])
        #`(begin
+
            (define ptr-tag (name->type-tag 'name~))
 
-           (define (genesis p)
+           (define (brahma p)
              (when (and p (not (cpointer-has-tag? p ptr-tag)))
                (cpointer-push-tag! p ptr-tag)
-               #,(if (attribute c.spec-q)
-                   #'(case (c.spec-q p)
-                       [(c.spec-a ...) (become! p c.child)]
-                       ...)
-                   #'(void)))
+               #,(when (attribute on-in)
+                   #'(let ([on-in.var p]) on-in.exp ...))
+               #,(when (attribute ch.spec-q)
+                   #'(case (ch.spec-q p)
+                       [(ch.spec-a ...) (become! p ch.child)] ...)))
              p)
-           (define name~
-             (make-ctype parent.type
-                         (lambda (p) (and p (check-pointer p ptr-tag)))
-                         genesis))
-           (hash-set! becomers name~ genesis)
+
+           (define (shiva p)
+             (and p (check-pointer p ptr-tag))
+             #,(when (attribute on-out)
+                 #'(let ([on-out.var p]) on-out.exp ...))
+             p)
+
+           (define name~ (make-ctype parent shiva brahma))
+
+           (hash-set! becomers name~ brahma)
 
            (define (name?~ ob)
              (and (cpointer? ob) (cpointer-has-tag? ob ptr-tag) #t)))
@@ -83,22 +100,22 @@
 
   (define-splicing-syntax-class to=>
     #:literals (=>)
-    (pattern (~seq (~and e (~not =>)) ...)))
+    (pattern (~seq (~and e (~not =>)) ... =>)))
 
   (syntax-parse stx
-    [(_ name option:to=> #:specialize proc => (cmark cname ce ...) ...)
+    [(_ name option:to=> #:specialize proc (cmark cname ce ...) ...)
      #'(begin
          (define-opaque-ptr name option.e ... 
            #:children #:specialize proc ((cmark cname) ...))
-         (define-opaque-ptr-hierarchy cname ce ...)
+         (define-opaque-ptr-hierarchy cname #:extends name ce ...)
          ...)]
-    [(_ name option:to=> => (cname ce ...) ...)
+    [(_ name option:to=> (cname ce ...) ...)
      #'(begin
          (define-opaque-ptr name option.e ... #:children (cname ...))
-         (define-opaque-ptr-hierarchy cname ce ...)
+         (define-opaque-ptr-hierarchy cname #:extends name ce ...)
          ...)]
-    [(_ name option:to=>)
-     #'(define-opaque-ptr name option.e ...)]
+    [(_ name option ...)
+     #'(define-opaque-ptr name option ...)]
     ))
 
 
@@ -123,11 +140,11 @@
               (if (integer? x) (arithmetic-shift 1 x) x))))
 
 
-;; (sequentially a b c) => '(a = 0 b = 1 c = 2)
-(define-syntax sequentially 
+;; (seq-labels a b c) => '(a = 0 b = 1 c = 2)
+(define-syntax seq-labels 
   (syntax-rules ()
     [(_ #:from b sym ...)
      (append* (for/list ([id '(sym ...)] [n (in-naturals b)])
                 (list id '= n)))]
-    [(_ sym ...) (sequentially #:from 0 sym ...)]))
+    [(_ sym ...) (seq-labels #:from 0 sym ...)]))
 

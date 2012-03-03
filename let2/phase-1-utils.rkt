@@ -11,8 +11,8 @@
                      decorate-id
                      lispify-string~
                      lispify-string
-                     optional-keyword-class
                      atom*
+                     fun-fragment
                      )
          define/provide
          define-naming-definer-for
@@ -63,18 +63,15 @@
 
 (begin-for-syntax
 
-  ;; Probably a stupid hack - easily manufacture local optional keyword-tagged
-  ;; syntax classes for syntax-parse.
-
-  (define-syntax-rule (optional-keyword-class name marker pat alt)
-    (define-splicing-syntax-class name
-      (pattern (~seq marker pat))
-      (pattern (~seq) #:with pat alt)))
-
-  ;; Accept either a singleton or a list and expand to sequence.
   (define-syntax-class atom*
-    (pattern (e ...))
+    #:description "a single expression of a list of expressions"
+    (pattern (e ...+))
     (pattern e~ #:with (e ...) #'(e~)))
+
+  (define-syntax-class fun-fragment
+    #:description "a function fragment of the form (v => e ...)"
+    #:literals (=>)
+    (pattern (var:id => exp:expr ...)))
 )
 
 ;; For a form generated through (define-ffi-definer definer-name ...), generate
