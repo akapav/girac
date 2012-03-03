@@ -14,9 +14,17 @@
                      optional-keyword-class
                      atom*
                      )
+         define/provide
          define-naming-definer-for
          define-ffi-definers
          )
+
+;; Useful little thingie. Does not really belong here, though.
+
+(define-syntax define/provide
+  (syntax-rules ()
+    [(_ id e #:provide provider) (begin (define id e) (provider id))]
+    [(_ id e) (define/provide id e #:provide void)]))
 
 ;; Here's the deal: either this goes meta + 1, or macros go meta - 1. But in the
 ;; latter case, they need to be directly `define'-d, which is less pleasant.

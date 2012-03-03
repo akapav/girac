@@ -9,7 +9,8 @@
   define-opaque-ptr
   define-opaque-ptr-hierarchy
   _ptr-ptr/list/0
-  _bitmask/bits)
+  _bitmask/bits
+  sequentially)
 
 
 ;;;; Our own version of tagged pointers. Goodies pending.
@@ -57,7 +58,7 @@
            (define ptr-tag (name->type-tag 'name~))
 
            (define (genesis p)
-             (when p
+             (when (and p (not (cpointer-has-tag? p ptr-tag)))
                (cpointer-push-tag! p ptr-tag)
                #,(if (attribute c.spec-q)
                    #'(case (c.spec-q p)
@@ -121,4 +122,12 @@
   (_bitmask (for/list ([x bmsk])
               (if (integer? x) (arithmetic-shift 1 x) x))))
 
+
+;; (sequentially a b c) => '(a = 0 b = 1 c = 2)
+(define-syntax sequentially 
+  (syntax-rules ()
+    [(_ #:from b sym ...)
+     (append* (for/list ([id '(sym ...)] [n (in-naturals b)])
+                (list id '= n)))]
+    [(_ sym ...) (sequentially #:from 0 sym ...)]))
 
