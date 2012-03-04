@@ -47,7 +47,7 @@
     (18 _type-info      )
   )
 
-(define hrrr '())
+(define _transfer (_enum (seq-labels nothing container everything)))
 
 ;;;; some random erorrs
 
@@ -99,6 +99,21 @@
 
 (define-libgir/n g_base_info_get_type (_fun _base-info -> _int))
 (define-libgir/n g_base_info_get_name (_fun _base-info -> _string))
+(define-libgir/n g_base_info_get_namespace  (_fun _base-info -> _string))
+
+;;;; callable type
+
+(define-libgir/n g_callable_info_get_return_type
+                 (_fun _callable-info -> _type-info))
+(define-libgir/n g_callable_info_get_caller_owns
+		 (_fun _callable-info -> _transfer))
+(define-libgir/n g_callable_info_may_return_null
+		 (_fun _callable-info -> _bool))
+
+(define-enumerator->list
+  callable-info-get-args
+  (g_callable_info_get_arg (_fun _callable-info _int -> _arg-info))
+  (g_callable_info_get_n_args (_fun _callable-info -> _int)))
 
 ;;;; function type
 
@@ -107,19 +122,30 @@
     method constructor getter setter wraps-vfunc throws)))
 
 (define-libgir/n g_function_info_get_symbol (_fun _function-info -> _string))
+(define-libgir/n g_function_info_get_flags (_fun _function-info -> _function-flags))
+(define-libgir/n g_function_info_get_vfunc (_fun _function-info -> _vfunc-info))
 
-(define-libgir/n g_function_info_get_flags
-                 (_fun _function-info -> _function-flags))
+;;;; vfunc type
 
-;;;; callable type
+(define _vfunc-flags
+  (_bitmask/bits (seq-labels must-chain-up must-override must-not-override)))
 
-(define-libgir/n g_callable_info_get_return_type
-                 (_fun _callable-info -> _type-info))
+(define-libgir/n g_vfunc_info_get_flags (_fun _vfunc-info -> _vfunc-flags))
+(define-libgir/n g_vfunc_info_get_offset
+		 (_fun _vfunc-info -> (r : _int) -> (if (= r #xffff) #f x)))
+(define-libgir/n g_vfunc_info_get_signal (_fun _vfunc-info -> _signal-info))
+(define-libgir/n g_vfunc_info_get_invoker (_fun _vfunc-info -> _function-info))
 
-(define-enumerator->list
-  callable-info-get-args
-  (g_callable_info_get_arg (_fun _callable-info _int -> _arg-info))
-  (g_callable_info_get_n_args (_fun _callable-info -> _int)))
+;;;; signal type
+
+(define _signal-flags
+  (_bitmask/bits (seq-labels
+    run_first run_last run_cleanup
+    no_recurse detailed action no_hooks must_collect)))
+
+(define-libgir/n g_signal_info_get_flags (_fun _signal-info -> _signal-flags))
+(define-libgir/n g_signal_info_get_class_closure (_fun _signal-info -> _vfunc-info))
+(define-libgir/n g_signal_info_true_stops_emit (_fun _signal-info -> _bool))
 
 ;;;; typeinfo type
 
@@ -136,50 +162,44 @@
     error
     unichar)))
 
+(define _array-type (_enum (seq-labels c array ptr-array byte-array)))
+
 (define-libgir/n g_type_info_get_tag (_fun _type-info -> _typetag))
-
 (define-libgir/n g_type_tag_to_string (_fun _typetag -> _string))
-
 (define-libgir/n g_type_info_get_interface (_fun _type-info -> _base-info))
-
+(define-libgir/n g_type_info_get_param_type (_fun _type-info _int -> _type-info))
 (define-libgir/n g_type_info_is_pointer (_fun _type-info -> _bool))
-
+(define-libgir/n g_type_info_get_array_length (_fun _type-info -> _int))
+(define-libgir/n g_type_info_get_array_fixed_size (_fun _type-info -> _int))
+(define-libgir/n g_type_info_is_zero_terminated (_fun _type-info -> _bool))
+(define-libgir/n g_type_info_get_array_type (_fun _type-info -> _array-type))
 (define-libgir type-info-is-basic?
                (_fun _type-info -> (r : _int) -> (or (< r 15) (= r 21)))
                #:c-id g_type_info_get_tag)
-
-(define-libgir/n g_type_info_get_array_length (_fun _type-info -> _int))
 
 ; (define-libgir/n g_type_info_get_array_type (_fun _type-info -> _
 
 ;;;; arginfo type
 
 (define _direction (_enum (seq-labels in out inout)))
-
-(define _transfer (_enum (seq-labels nothing container everything)))
+(define _scope-type (_enum (seq-labels invalid call async notified)))
 
 (define-libgir/n g_arg_info_get_direction (_fun _arg-info -> _direction))
-
 (define-libgir/n g_arg_info_is_caller_allocates (_fun _arg-info -> _bool))
-
 (define-libgir/n g_arg_info_is_return_value (_fun _arg-info -> _bool))
-
 (define-libgir/n g_arg_info_is_optional (_fun _arg-info -> _bool))
-
 (define-libgir/n g_arg_info_may_be_null (_fun _arg-info -> _bool))
-
 (define-libgir/n g_arg_info_get_ownership_transfer (_fun _arg-info -> _transfer))
-
 (define-libgir/n g_arg_info_get_type (_fun _arg-info -> _type-info))
+(define-libgir/n g_arg_info_get_scope (_fun _arg-info -> _scope-type))
+(define-libgir/n g_arg_info_get_closure (_fun _arg-info -> _int))
+(define-libgir/n g_arg_info_get_destroy (_fun _arg-info -> _int))
 
 ;;;; object type
 
 (define-libgir/n g_object_info_get_type_name (_fun _object-info -> _string))
-
 (define-libgir/n g_object_info_get_type_init (_fun _object-info -> _string))
-
 (define-libgir/n g_object_info_get_abstract (_fun _object-info -> _bool))
-
 (define-libgir/n g_object_info_get_parent (_fun _object-info -> _object-info))
 
 (define-enumerator->list
@@ -195,7 +215,6 @@
 ;;;; struct type
 
 (define-libgir/n g_struct_info_get_size (_fun _struct-info -> _size))
-
 (define-libgir/n g_struct_info_is_foreign (_fun _struct-info -> _bool))
 
 (define-enumerator->list
@@ -210,7 +229,13 @@
   (g_enum_info_get_value (_fun _enum-info _int -> _value-info))
   (g_enum_info_get_n_values (_fun _enum-info -> _int)))
 
+(define-enumerator->list
+  enum-info-get-methods
+  (g_enum_info_get_method  (_fun _enum-info _int -> _function-info))
+  (g_enum_info_get_n_methods (_fun _enum-info -> _int)))
+  
 (define-libgir/n g_value_info_get_value (_fun _value-info -> _int64))
+(define-libgir/n g_enum_info_get_storage_type (_fun _enum-info -> _typetag))
 
 ;;;; iface type
 
