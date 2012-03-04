@@ -15,6 +15,7 @@
                      fun-fragment
                      )
          define/provide
+         with-syntax*
          define-naming-definer-for
          define-ffi-definers
          )
@@ -23,8 +24,15 @@
 
 (define-syntax define/provide
   (syntax-rules ()
-    [(_ id e #:provide provider) (begin (define id e) (provider id))]
-    [(_ id e) (define/provide id e #:provide void)]))
+    [(_ id e #:provide provide~) (begin (provide~ id) (define id e))]
+    [(_ id e) (define/provide id e #:provide provide)]))
+
+;; Does this really not exist!??
+
+(define-syntax with-syntax*
+  (syntax-rules ()
+    [(_ (k0) e ...) (with-syntax (k0) e ...)]
+    [(_ (k0 k ...) e ...) (with-syntax (k0) (with-syntax* (k ...) e ...))]))
 
 ;; Here's the deal: either this goes meta + 1, or macros go meta - 1. But in the
 ;; latter case, they need to be directly `define'-d, which is less pleasant.

@@ -59,6 +59,8 @@
     [(_ name~
         (~seq (~or (~optional (~seq #:extends parent:id)
                               #:defaults ([parent #'_pointer]))
+                   (~optional (~seq #:provide provide~:id)
+                              #:defaults ([provide~ #'provide]))
                    (~optional (~seq #:on-ingress on-in:fun-fragment))
                    (~optional (~seq #:on-outgress on-out:fun-fragment)))
               ...)
@@ -66,6 +68,8 @@
 
      (with-syntax ([(name?~) (decorate-id #'name~ "?")])
        #`(begin
+
+           (provide~ name~ name?~)
 
            (define ptr-tag (name->type-tag 'name~))
 
@@ -121,24 +125,21 @@
 
 ;;;; Some aux `prim' c types.
 
+;; Btw if the type does not have `_pointer' representation, bad shit happens.
 (define (_ptr-ptr/list/0 type)
   (make-ctype _pointer
     (lambda _ (error '_ptr-ptr/list/0->C "lol this is inparam for now"))
     (lambda (p)
-      (and p (let loop ([ndx 0] [acc '()])
+      (and p (let loop ([ndx 0])
                (let ([elt (ptr-ref p type ndx)])
-                 (if elt
-                   (begin
-                     (free (ptr-ref p _pointer ndx))
-                     (loop (add1 ndx) (cons elt acc)))
-                   (begin (free p) (reverse acc)))))))))
-
+                 (cond [elt (free (ptr-ref p _pointer ndx))
+                            (cons elt (loop (add1 ndx)))]
+                       [else (free p) '()])))))))
 
 ;; Like Racket's `_bitmask', but with bit positions.
 (define (_bitmask/bits bmsk)
   (_bitmask (for/list ([x bmsk])
               (if (integer? x) (arithmetic-shift 1 x) x))))
-
 
 ;; (seq-labels a b c) => '(a = 0 b = 1 c = 2)
 (define-syntax seq-labels 
