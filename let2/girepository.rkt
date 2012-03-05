@@ -1,6 +1,7 @@
 #lang racket
 
 (require (for-syntax syntax/parse)
+         srfi/26
          "struct-projective.rkt"
          "girepository-raw.rkt")
 
@@ -29,8 +30,8 @@
    ;;; WHAT THE FUCK IS A `METHOD' ATTACHED SOLELY TO AN ENUMERATION THAT
    ;;; DOESN'T EVEN MENTION THE GIVEN ENUMERATION!!??
 ;    [methods (lambda (p)
-;               (map resolve-raw-info (enum-info-get-methods p)))]
-;    [methods (lambda (p) (map resolve-raw-info/cycle
+;               (map resolve-info/local (enum-info-get-methods p)))]
+;    [methods (lambda (p) (map resolve-info/local
 ;                              (enum-info-get-methods p)))]
    [values  (lambda (p)
               (for/list ([v (in-list (enum-info-get-values p))])
@@ -80,7 +81,7 @@
   (case tag
     [(glist gslist ghash) (auto-gcontainer-type ti)]
     [(array)     (auto-array-type ti)]
-    [(interface) (resolve-raw-info/cycle (g-type-info-get-interface ti))]
+    [(interface) (resolve-info (g-type-info-get-interface ti))]
     [else        tag]))
 
 ;; Utterly underdocumented, it seems we are expected to know the arity of
@@ -106,19 +107,52 @@
 ;;;;
 ;;;; decode
 
+(define current-name-ctx (make-parameter #f))
+
+(define current-gir-env (make-parameter #f))
+
+(define current-pending (make-parameter #f))
+
 (struct gir-env (entries girs) #:transparent)
 
-(define (empty-gir-env)
-  (gir-env (make-hash) (set)))
+(struct gir-ref (namespace name scope) #:transparent)
 
-(define (register-raw-info! env ri)
-  (define i (resolve-raw-info ri))
-  (hash-set! (gir-env-entries env) (gir-info-sig i) i))
+(define (empty-gir-env) (gir-env (make-hash) (set)))
 
-(define (gir-info-sig i)
-  (cons (info-namespace i) (info-name i)))
+(define (make-gir-ref ob [scoped #t])
+  (gir-ref (g-base-info-get-name ob)
+           (g-base-info-get-namespace ob)
+           (and scoped (current-name-ctx))))
 
-(define (resolve-raw-info i)
+(define (nothing-pending) (box (set)))
+
+(define (register-resolved-thingie! ref ob)
+  (hash-set! (gir-env-entries (current-gir-env)) ref ob))
+
+(define (register-pending! ref)
+  (define p (current-pending))
+  (set-box! p (set-add (unbox p) ref)))
+
+(define-syntax-rule (with-name-ctx x e ...)
+  (begin
+    (define ctx (cond [(current-name-ctx)
+                       => (cute cons (g-base-info-get-name x) <>)]
+                      [else (g-base-info-get-name x)]))
+    (parameterize ([current-name-ctx ctx]) e ...)))
+
+(define (resolve-info/local ri)
+  (resolve-info ri #:local-info #t))
+
+(define (resolve-info ri #:local-info [local? #f])
+  (let ([reference (make-gir-ref ri local?)])
+    (cond [(and (current-name-ctx) (not local?))
+           (register-pending! reference)]
+          [else (with-name-ctx ri
+                  (register-resolved-thingie!
+                    reference (project-raw-info ri)))])
+    reference))
+
+(define (project-raw-info i)
   (let-syntax ([app-if (syntax-rules (=>)
                          [(_ (pred => f) ...)
                           (cond [(pred i) (f i)] ...)])])
@@ -129,14 +163,6 @@
             (_callable-info? => auto-callable)
             (_enum-info?     => auto-enum    )
             (values          => auto-info    ))))
-
-(define current-pending (make-parameter #f))
-
-(define (resolve-raw-info/cycle ri)
-  (define-values (p i) (values (current-pending)
-                               (auto-info ri)))
-  (set-box! p (set-add (unbox p) (gir-info-sig i)))
-  i)
 
 (define (load-gir! env gir-name [gir-version #f]
                    #:lax        [lax? #f]
@@ -149,12 +175,13 @@
       . ,(or (and trans? (g-irepository-get-dependencies gir-name))
              '())))
 
-  (define pending (box (set)))
+  (define pending (nothing-pending))
 
-  (parameterize ([current-pending pending])
+  (parameterize ([current-gir-env env]
+                 [current-pending pending])
     (for* ([repo+v repos]
            [raw-info (irepository-get-infos (car repo+v))])
-      (register-raw-info! env raw-info)))
+      (resolve-info raw-info)))
 
   (unless lax?
     (define unresolved
