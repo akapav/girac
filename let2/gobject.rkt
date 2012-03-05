@@ -2,7 +2,7 @@
 
 (require "phase-1-utils.rkt"
          ffi/unsafe
-	 ffi/unsafe/define)
+         ffi/unsafe/define)
 
 (provide ensure-gtypes-initialized)
 
@@ -20,8 +20,8 @@
     (lambda ()
       (unless initialized
         (displayln "initializing gobject....")
-	(g-type-init)
-	(set! initialized #t)))))
+        (g-type-init)
+        (set! initialized #t)))))
 
 (ensure-gtypes-initialized)
 

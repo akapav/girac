@@ -1,14 +1,14 @@
 #lang racket
 
 (require "phase-1-utils.rkt"
-	 (for-syntax syntax/parse)
-	 "girepository-raw.rkt"
-	 racket/mpair)
+         (for-syntax syntax/parse)
+         "girepository-raw.rkt"
+         racket/mpair)
 
 (provide load-gir!
-	 (struct-out gir-env)
-	 empty-gir-env
-	 show-env)
+         (struct-out gir-env)
+         empty-gir-env
+         show-env)
 
 
 ;;;;
@@ -29,26 +29,26 @@
     (hash-set! initializers struct~ (list expr ...))
     (define name
       (let ([inits (let scan [(who struct~)]
-		     (if (not who) '()
-		       (append (scan (parent-of who))
-			       (hash-ref initializers who '()))))])
-	(lambda (ob)
-	  (apply (struct-type-make-constructor struct~)
-		 (for/list ([init (in-list inits)]) (init ob))))))))
+                     (if (not who) '()
+                       (append (scan (parent-of who))
+                               (hash-ref initializers who '()))))])
+        (lambda (ob)
+          (apply (struct-type-make-constructor struct~)
+                 (for/list ([init (in-list inits)]) (init ob))))))))
 
 ;; A structure that gets created by copying something.
 
 (define-syntax struct/projective
   (syntax-parser
     [(_ name (~optional (~seq parent:id)) #:ctor ctor
-    	((field:id init) ...) opt ...)
+        ((field:id init) ...) opt ...)
      (let ([p (if (attribute parent) #'(parent) #'())])
        #`(begin
-	   (struct name #,@p (field ...) #:inspector inspector opt ...)
-	   ;; XXX FIXME TODO use phase-1 structure reflection to divine the
-	   ;; structure-type-descriptor, not name-guessing!!!
-	   (define-initializer
-	     ctor #,@(decorate-id #'name '("struct:" "")) init ...)))]))
+           (struct name #,@p (field ...) #:inspector inspector opt ...)
+           ;; XXX FIXME TODO use phase-1 structure reflection to divine the
+           ;; structure-type-descriptor, not name-guessing!!!
+           (define-initializer
+             ctor #,@(decorate-id #'name '("struct:" "")) init ...)))]))
 
 ;;;;
 ;;;; structure
@@ -79,50 +79,50 @@
   ([storage g-enum-info-get-storage-type]
    [methods enum-info-get-methods]
    [values  (lambda (p)
-   	      (for/list ([v (in-list (enum-info-get-values p))])
-		(cons (g-base-info-get-name v)
-		      (g-value-info-get-value v))))]))
+              (for/list ([v (in-list (enum-info-get-values p))])
+                (cons (g-base-info-get-name v)
+                      (g-value-info-get-value v))))]))
 
 (struct/projective callable info #:ctor auto-callable
   ([args
      (lambda (p)
        (for/list ([a (in-list (callable-info-get-args p))])
-	 ((plist a
-	    (name          g-base-info-get-name)
-	    (type          (compose1 decode-typeinfo g-arg-info-get-type))
-	    (direction     g-arg-info-get-direction)
-	    (transfer      g-arg-info-get-ownership-transfer)
-	    (caller-alloc  g-arg-info-is-caller-allocates #:flag)
-	    (return        g-arg-info-is-return-value     #:flag)
-	    (optional      g-arg-info-is-optional 	  #:flag)
-	    (null          g-arg-info-may-be-null         #:flag))
-	  . append .
-	   (if (eq? 'invalid (g-arg-info-get-scope a)) '()
-	     (plist a
-	       (scope       g-arg-info-get-scope)
-	       (closure     g-arg-info-get-closure)
-	       (destroy     g-arg-info-get-destroy))))))]
+         ((plist a
+            (name          g-base-info-get-name)
+            (type          (compose1 decode-typeinfo g-arg-info-get-type))
+            (direction     g-arg-info-get-direction)
+            (transfer      g-arg-info-get-ownership-transfer)
+            (caller-alloc  g-arg-info-is-caller-allocates #:flag)
+            (return        g-arg-info-is-return-value     #:flag)
+            (optional      g-arg-info-is-optional         #:flag)
+            (null          g-arg-info-may-be-null         #:flag))
+          . append .
+           (if (eq? 'invalid (g-arg-info-get-scope a)) '()
+             (plist a
+               (scope       g-arg-info-get-scope)
+               (closure     g-arg-info-get-closure)
+               (destroy     g-arg-info-get-destroy))))))]
    [return
      (lambda (p)
        (plist p
-	 (type     (compose1 decode-typeinfo g-callable-info-get-return-type))
-	 (transfer g-callable-info-get-caller-owns)
-	 (null     g-callable-info-may-return-null #:flag)))]))
+         (type     (compose1 decode-typeinfo g-callable-info-get-return-type))
+         (transfer g-callable-info-get-caller-owns)
+         (null     g-callable-info-may-return-null #:flag)))]))
 
 (define (decode-typeinfo t)
   (define tag (g-type-info-get-tag t))
   (match tag
     ['interface
      `(interface ,(resolve-raw-info/cycle
-     		    (g-type-info-get-interface t)))]
+                    (g-type-info-get-interface t)))]
     ['array
      `(array .
       ,(plist t
-	 (array-type g-type-info-get-array-type)
-	 (type (compose1 decode-typeinfo type-info-param-type))
-	 (zero-terminated g-type-info-is-zero-terminated #:flag)
-	 (len g-type-info-get-array-length #:when (l (>= l 0)))
-	 (fixed g-type-info-get-array-fixed-size #:when (s (>= s 0)))))]
+         (array-type g-type-info-get-array-type)
+         (type (compose1 decode-typeinfo type-info-param-type))
+         (zero-terminated g-type-info-is-zero-terminated #:flag)
+         (len g-type-info-get-array-length #:when (l (>= l 0)))
+         (fixed g-type-info-get-array-fixed-size #:when (s (>= s 0)))))]
     [(or 'glist 'gslist 'ghash)
      `(,tag (type . ,(decode-typeinfo (type-info-param-type t))))]
     [_ (list tag)]))
@@ -137,7 +137,7 @@
    [flags  g-function-info-get-flags]))
 
 (struct/projective signal callable #:ctor auto-signal
-  ([flags  	     g-signal-info-get-flags]
+  ([flags            g-signal-info-get-flags]
    [class-closure    g-signal-info-get-class-closure]
    [true-stops-emit? g-signal-info-true-stops-emit]))
 
@@ -165,52 +165,52 @@
 
 (define (resolve-raw-info i)
   (let-syntax ([app-if (syntax-rules (=>)
-			 [(_ (pred => f) ...)
-			  (cond [(pred i) (f i)] ...)])])
+                         [(_ (pred => f) ...)
+                          (cond [(pred i) (f i)] ...)])])
 
     (app-if (_function-info? => auto-function)
-	    (_signal-info?   => auto-signal  )
-	    (_vfunc-info?    => auto-vfunc   )
-	    (_callable-info? => auto-callable)
-	    (_enum-info?     => auto-enum    )
-	    (values          => auto-info    ))))
+            (_signal-info?   => auto-signal  )
+            (_vfunc-info?    => auto-vfunc   )
+            (_callable-info? => auto-callable)
+            (_enum-info?     => auto-enum    )
+            (values          => auto-info    ))))
 
 (define current-pending (make-parameter #f))
 
 (define (resolve-raw-info/cycle ri)
   (define-values (p i) (values (current-pending)
-			       (auto-info ri)))
+                               (auto-info ri)))
   (set-box! p (set-add (unbox p) (gir-info-sig i)))
   i)
 
 (define (load-gir! env
-		   gir-name [gir-version #f]
-		   #:lax        [lax? #f]
-		   #:transitive [trans? #t])
+                   gir-name [gir-version #f]
+                   #:lax        [lax? #f]
+                   #:transitive [trans? #t])
 
   (g-irepository-require gir-name gir-version)
 
   (define repos
     `((,gir-name ,gir-version)
       . ,(or (and trans? (g-irepository-get-dependencies gir-name))
-	     '())))
+             '())))
 
   (define pending (box (set)))
 
   (parameterize ([current-pending pending])
     (for* ([repo+v repos]
-	   [raw-info (irepository-get-infos (car repo+v))])
-	  (register-raw-info! env raw-info)))
+           [raw-info (irepository-get-infos (car repo+v))])
+          (register-raw-info! env raw-info)))
 
   (unless lax?
     (define unresolved
       (for/list ([sig (in-set (unbox pending))]
-		 #:when
-		 (not (hash-has-key? (gir-env-entries env) sig)))
+                 #:when
+                 (not (hash-has-key? (gir-env-entries env) sig)))
         sig))
     (when (pair? unresolved)
       (error 'load-gir! "some info entries are still unknown: ~s"
-	     unresolved)))
+             unresolved)))
   repos)
 
 (define show-env (compose1 pretty-print gir-env-entries))

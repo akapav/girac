@@ -27,7 +27,7 @@
   #:on-ingress (p => (register-finalizer p g-base-info-unref)) =>
     #:specialize g-base-info-get-type
     ((1 13 14) _callable-info =>
-	#:specialize g-base-info-get-type
+        #:specialize g-base-info-get-type
         (1  _function-info)
         (13 _signal-info  )
         (14 _vfunc-info   ))
@@ -106,9 +106,9 @@
 (define-libgir/n g_callable_info_get_return_type
                  (_fun _callable-info -> _type-info))
 (define-libgir/n g_callable_info_get_caller_owns
-		 (_fun _callable-info -> _transfer))
+                 (_fun _callable-info -> _transfer))
 (define-libgir/n g_callable_info_may_return_null
-		 (_fun _callable-info -> _bool))
+                 (_fun _callable-info -> _bool))
 
 (define-enumerator->list
   callable-info-get-args
@@ -132,7 +132,7 @@
 
 (define-libgir/n g_vfunc_info_get_flags (_fun _vfunc-info -> _vfunc-flags))
 (define-libgir/n g_vfunc_info_get_offset
-		 (_fun _vfunc-info -> (r : _int) -> (if (= r #xffff) #f r)))
+                 (_fun _vfunc-info -> (r : _int) -> (if (= r #xffff) #f r)))
 (define-libgir/n g_vfunc_info_get_signal (_fun _vfunc-info -> _signal-info))
 (define-libgir/n g_vfunc_info_get_invoker (_fun _vfunc-info -> _function-info))
 
