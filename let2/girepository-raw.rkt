@@ -44,8 +44,11 @@
     (15 _property-info  )
     (16 _field-info     )
     (17 _arg-info       )
-    (18 _type-info      )
+;     (18 _type-info      )
   )
+
+;; wow... this one crashes when treated as base info. gnomyness > 9000.
+(define-opaque-ptr _type-info)
 
 (define _transfer (_enum (seq-labels nothing container everything)))
 
@@ -176,8 +179,6 @@
 (define-libgir type-info-is-basic?
                (_fun _type-info -> (r : _int) -> (or (< r 15) (= r 21)))
                #:c-id g_type_info_get_tag)
-
-; (define-libgir/n g_type_info_get_array_type (_fun _type-info -> _
 
 ;;;; arginfo type
 
