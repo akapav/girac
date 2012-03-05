@@ -132,7 +132,7 @@
 
 (define-libgir/n g_vfunc_info_get_flags (_fun _vfunc-info -> _vfunc-flags))
 (define-libgir/n g_vfunc_info_get_offset
-		 (_fun _vfunc-info -> (r : _int) -> (if (= r #xffff) #f x)))
+		 (_fun _vfunc-info -> (r : _int) -> (if (= r #xffff) #f r)))
 (define-libgir/n g_vfunc_info_get_signal (_fun _vfunc-info -> _signal-info))
 (define-libgir/n g_vfunc_info_get_invoker (_fun _vfunc-info -> _function-info))
 
