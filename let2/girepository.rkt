@@ -5,23 +5,15 @@
          "girepository-raw.rkt")
 
 (provide load-gir!
+         (struct-out info)
+         (struct-out enum)
+         (struct-out callable)
+         (struct-out function)
+         (struct-out signal)
+         (struct-out vfunc)
          (struct-out gir-env)
          empty-gir-env
          show-env)
-
-;; ROCK IT LIKE IT'S 1959!!
-
-(define-syntax (prop stx)
-  (syntax-parse stx
-    [(_ x tag:id expr:expr) #'`((tag . ,(expr x)))]
-    [(_ x tag:id expr:expr #:flag) #'(if (expr x) '(tag) '())]
-    [(_ x tag:id expr:expr #:when [id:id test:expr])
-     #'(let ([id (expr x)]) (if test `((tag . ,id)) '()))]))
-
-(define-syntax plist
-  (syntax-rules ()
-    [(_ x (e0 ...) e1 ...) (append (prop x e0 ...) (plist x e1 ...))]
-    [(_ x) '()]))
 
 ;;;;
 ;;;; structure
@@ -34,55 +26,62 @@
 
 (struct/projective enum info #:ctor auto-enum
   ([storage g-enum-info-get-storage-type]
-   [methods enum-info-get-methods]
+   ;;; WHAT THE FUCK IS A `METHOD' ATTACHED SOLELY TO AN ENUMERATION THAT
+   ;;; DOESN'T EVEN MENTION THE GIVEN ENUMERATION!!??
+;    [methods (lambda (p)
+;               (map resolve-raw-info (enum-info-get-methods p)))]
+;    [methods (lambda (p) (map resolve-raw-info/cycle
+;                              (enum-info-get-methods p)))]
    [values  (lambda (p)
               (for/list ([v (in-list (enum-info-get-values p))])
                 (cons (g-base-info-get-name v)
                       (g-value-info-get-value v))))]))
 
-(struct/projective callable info #:ctor auto-callable
-  ([args
-     (lambda (p)
-       (for/list ([a (in-list (callable-info-get-args p))])
-         ((plist a
-            (name          g-base-info-get-name)
-            (type          (compose1 decode-typeinfo g-arg-info-get-type))
-            (direction     g-arg-info-get-direction)
-            (transfer      g-arg-info-get-ownership-transfer)
-            (caller-alloc  g-arg-info-is-caller-allocates #:flag)
-            (return        g-arg-info-is-return-value     #:flag)
-            (optional      g-arg-info-is-optional         #:flag)
-            (null          g-arg-info-may-be-null         #:flag))
-          . append .
-          (if (eq? 'invalid (g-arg-info-get-scope a)) '()
-            (plist a
-              (scope       g-arg-info-get-scope)
-              (closure     g-arg-info-get-closure)
-              (destroy     g-arg-info-get-destroy))))))]
-   [return
-     (lambda (p)
-       (plist p
-         (type     (compose1 decode-typeinfo g-callable-info-get-return-type))
-         (transfer g-callable-info-get-caller-owns)
-         (null     g-callable-info-may-return-null #:flag)))]))
+(struct/projective argument info #:ctor auto-argument
+  ([type           (lambda (p) (decode-type-info (g-arg-info-get-type p)))]
+   [direction      g-arg-info-get-direction]
+   [transfer       g-arg-info-get-ownership-transfer]
+   [caller-alloc?  g-arg-info-is-caller-allocates]
+   [return?        g-arg-info-is-return-value]
+   [optional?      g-arg-info-is-optional]
+   [null?          g-arg-info-may-be-null]
+   [closure-info   (match-lambda
+                     [(app g-arg-info-get-scope 'invalid) #f]
+                     [p `((scope   ,(g-arg-info-get-scope   p))
+                          (closure ,(g-arg-info-get-closure p))
+                          (destroy ,(g-arg-info-get-destroy p)))])]
+))
 
-(define (decode-typeinfo t)
-  (define tag (g-type-info-get-tag t))
-  (match tag
-    ['interface
-     `(interface ,(resolve-raw-info/cycle
-                    (g-type-info-get-interface t)))]
-    ['array
-     `(array .
-      ,(plist t
-         (array-type g-type-info-get-array-type)
-         (type (compose1 decode-typeinfo type-info-param-type))
-         (zero-terminated g-type-info-is-zero-terminated #:flag)
-         (len g-type-info-get-array-length #:when (l (>= l 0)))
-         (fixed g-type-info-get-array-fixed-size #:when (s (>= s 0)))))]
-    [(or 'glist 'gslist 'ghash)
-     `(,tag (type . ,(decode-typeinfo (type-info-param-type t))))]
-    [_ (list tag)]))
+(struct/projective callable info #:ctor auto-callable
+  ([args   (lambda (p) (map auto-argument (callable-info-get-args p)))]
+   [return (lambda (p)
+             `((type     ,(decode-type-info
+                            (g-callable-info-get-return-type p)))
+               (transfer ,(g-callable-info-get-caller-owns   p))
+               (null?    ,(g-callable-info-may-return-null   p))))]))
+
+(define-syntax-rule (gate/f [id f] test)
+  (lambda (x) (let ([id (f x)]) (if test id #f))))
+
+(struct/projective array-type #:ctor auto-array-type
+  ([element-type     (lambda (p) (decode-type-info (type-info-param-type p)))]
+   [array-type       g-type-info-get-array-type]
+   [zero-terminated? g-type-info-is-zero-terminated]
+   [length           (gate/f [l g-type-info-get-array-length    ] (>= l 0))]
+   [fixed-length     (gate/f [s g-type-info-get-array-fixed-size] (>= s 0))]))
+
+(struct/projective gcontainer-type #:ctor auto-gcontainer-type
+  ([container    g-type-info-get-tag]
+   [element-type (lambda (p) (decode-type-info (type-info-param-type p)))]))
+
+
+(define (decode-type-info ti)
+  (define tag (g-type-info-get-tag ti))
+  (case tag
+    [(glist gslist ghash) (auto-gcontainer-type ti)]
+    [(array)     (auto-array-type ti)]
+    [(interface) (resolve-raw-info/cycle (g-type-info-get-interface ti))]
+    [else        tag]))
 
 ;; Utterly underdocumented, it seems we are expected to know the arity of
 ;; higher-kinded types in advance. And they are all of kind *->*, really.
@@ -155,7 +154,7 @@
   (parameterize ([current-pending pending])
     (for* ([repo+v repos]
            [raw-info (irepository-get-infos (car repo+v))])
-          (register-raw-info! env raw-info)))
+      (register-raw-info! env raw-info)))
 
   (unless lax?
     (define unresolved
