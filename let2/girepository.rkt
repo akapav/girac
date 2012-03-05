@@ -1,59 +1,13 @@
 #lang racket
 
-(require "phase-1-utils.rkt"
-         (for-syntax syntax/parse)
-         "girepository-raw.rkt"
-         racket/mpair)
+(require (for-syntax syntax/parse)
+         "struct-projective.rkt"
+         "girepository-raw.rkt")
 
 (provide load-gir!
          (struct-out gir-env)
          empty-gir-env
          show-env)
-
-
-;;;;
-;;;; metastructure
-;;;;
-
-;; Chainable inits... probably already exists in fome form, can't find yet.
-
-(define inspector (make-inspector))
-
-(define initializers (make-hasheq))
-
-(define (parent-of stype)
-  (let-values ([(e1 e2 e3 e4 e5 e6 p e8) (struct-type-info stype)]) p))
-
-(define-syntax-rule (define-initializer name struct~ expr ...)
-  (begin
-    (hash-set! initializers struct~ (list expr ...))
-    (define name
-      (let ([inits (let scan [(who struct~)]
-                     (if (not who) '()
-                       (append (scan (parent-of who))
-                               (hash-ref initializers who '()))))])
-        (lambda (ob)
-          (apply (struct-type-make-constructor struct~)
-                 (for/list ([init (in-list inits)]) (init ob))))))))
-
-;; A structure that gets created by copying something.
-
-(define-syntax struct/projective
-  (syntax-parser
-    [(_ name (~optional (~seq parent:id)) #:ctor ctor
-        ((field:id init) ...) opt ...)
-     (let ([p (if (attribute parent) #'(parent) #'())])
-       #`(begin
-           (struct name #,@p (field ...) #:inspector inspector opt ...)
-           ;; XXX FIXME TODO use phase-1 structure reflection to divine the
-           ;; structure-type-descriptor, not name-guessing!!!
-           (define-initializer
-             ctor #,@(decorate-id #'name '("struct:" "")) init ...)))]))
-
-;;;;
-;;;; structure
-;;;; (We should really tweak these according to the needs of later stages.)
-;;;;
 
 ;; ROCK IT LIKE IT'S 1959!!
 
@@ -69,6 +23,9 @@
     [(_ x (e0 ...) e1 ...) (append (prop x e0 ...) (plist x e1 ...))]
     [(_ x) '()]))
 
+;;;;
+;;;; structure
+;;;; (We should really tweak these according to the needs of later stages.)
 
 (struct/projective info #:ctor auto-info
   ([namespace g-base-info-get-namespace]
@@ -97,11 +54,11 @@
             (optional      g-arg-info-is-optional         #:flag)
             (null          g-arg-info-may-be-null         #:flag))
           . append .
-           (if (eq? 'invalid (g-arg-info-get-scope a)) '()
-             (plist a
-               (scope       g-arg-info-get-scope)
-               (closure     g-arg-info-get-closure)
-               (destroy     g-arg-info-get-destroy))))))]
+          (if (eq? 'invalid (g-arg-info-get-scope a)) '()
+            (plist a
+              (scope       g-arg-info-get-scope)
+              (closure     g-arg-info-get-closure)
+              (destroy     g-arg-info-get-destroy))))))]
    [return
      (lambda (p)
        (plist p
@@ -149,7 +106,6 @@
 
 ;;;;
 ;;;; decode
-;;;;
 
 (struct gir-env (entries girs) #:transparent)
 
@@ -183,8 +139,7 @@
   (set-box! p (set-add (unbox p) (gir-info-sig i)))
   i)
 
-(define (load-gir! env
-                   gir-name [gir-version #f]
+(define (load-gir! env gir-name [gir-version #f]
                    #:lax        [lax? #f]
                    #:transitive [trans? #t])
 
