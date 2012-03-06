@@ -16,6 +16,7 @@
                      )
          define/provide
          with-syntax*
+         app-if
          define-naming-definer-for
          define-ffi-definers
          )
@@ -33,6 +34,12 @@
   (syntax-rules ()
     [(_ (k0) e ...) (with-syntax (k0) e ...)]
     [(_ (k0 k ...) e ...) (with-syntax (k0) (with-syntax* (k ...) e ...))]))
+
+;; Ease the pain of predicate-based dispatch.
+(define-syntax app-if
+  (syntax-rules (=>)
+    [(_ i (pred => f) ...)
+     (cond [(pred i) (f i)] ...)]))
 
 ;; Here's the deal: either this goes meta + 1, or macros go meta - 1. But in the
 ;; latter case, they need to be directly `define'-d, which is less pleasant.
