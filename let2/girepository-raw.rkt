@@ -4,9 +4,11 @@
   "phase-1-utils.rkt"
   "ffi-type.rkt"
   "gobject.rkt"
+  "glib-boot/gerror.rkt"
   ffi/unsafe
   ffi/unsafe/define
-  ffi/unsafe/alloc)
+  ffi/unsafe/alloc
+  ffi/cvector)
 
 
 (define-ffi-definers define-libgir
@@ -22,6 +24,9 @@
 (define-opaque-ptr _repo)
 (define-opaque-ptr _gerror)
 
+;; XXX decode magic numbers
+(define _gtype _size)
+
 (define-opaque-ptr-hierarchy
   _base-info
   #:on-ingress (p => (register-finalizer p g-base-info-unref)) =>
@@ -32,14 +37,16 @@
         (13 _signal-info  )
         (14 _vfunc-info   ))
     (2  _callback-info  )
-    (3  _struct-info    )
+    ((3 5 7 8 11) _registered-type-info =>
+        #:specialize g-base-info-get-type
+        (3  _struct-info    )
+        (5  _enum-info      )
+        (7  _object-info    )
+        (8  _interface-info )
+        (11 _union-info     ))
     (4  _boxed-info     )
-    (5  _enum-info      )
     (6  _flags-info     )
-    (7  _object-info    )
-    (8  _interface-info )
     (9  _constant-info  )
-    (11 _union-info     )
     (12 _value-info     )
     (15 _property-info  )
     (16 _field-info     )
@@ -50,13 +57,31 @@
 ;; wow... this one crashes when treated as base info. gnomyness > 9000.
 (define-opaque-ptr _type-info)
 
+(define arg-type-list
+  (list _bool
+        _int8  _uint8  _int16 _uint16
+        _int32 _uint32 _int64 _uint64
+        _float _double
+        _short _ushort
+        _int   _uint   _long  _ulong
+;         gssize   v_ssize;
+;         gsize    v_size;
+        _string
+        _pointer))
+
+(define _argument (apply _union arg-type-list))
+
 (define _transfer (_enum (seq-labels nothing container everything)))
 
-;;;; some random erorrs
+; ;; The api claims this was supposed to be "opaque", however, there are no
+; ;; constructors. We need to *form* these, opaque, things.
+; (define-cstruct _attribute-iter ([data1 _pointer]
+;                                  [data2 _pointer]
+;                                  [data3 _pointer]
+;                                  [data4 _pointer]))
 
-;; TODO - figure out how to decode this.
-(define (g-error who err)
-  (error who "nonsensical error: ~a" err))
+; (define (empty-attribute-iter)
+;   (make-attribute-iter #f #f #f #f))
 
 ;;;; some likely idioms
 
@@ -72,6 +97,13 @@
 (define ((enumerator->list get cnt) ob)
   (for/list ([i (in-range (cnt ob))]) (get ob i)))
 
+(define-syntax-rule (define-enumerator->list* name c-get c-cnt _from _to)
+  (define-enumerator->list
+    name
+    (c-get (_fun _from _int -> _to))
+    (c-cnt (_fun _from -> _int))))
+
+
 ;;;; repository functions
 
 ;;; unref function for all baseinfo derived types
@@ -86,23 +118,28 @@
 ;; load a repository (typelib)
 (define-libgir/n g_irepository_require
   (_fun (name [ver #f])
-   :: (_repo = #f) (name : _string) (ver : _string) (_int = 0) (err : (_ptr o _gerror))
-   -> (res : _typelib)
-   -> (or res (g-error 'g_irepository_require err))))
+   :: (_repo = #f) (name : _string) (ver : _string) (_int = 0) _gerror/raise
+   -> _typelib))
 
 (define-libgir/n g_irepository_get_dependencies
   (_fun (_repo = #f) _string -> (res : (_ptr-ptr/list/0 _string))
-    -> (for/list ([str res])
-         (cdr (regexp-match #px"^(.*)-(\\d+\\.\\d+)$" str)))))
+    -> (if (not res) '()
+         (for/list ([str res])
+           (cdr (regexp-match #px"^(.*)-(\\d+\\.\\d+)$" str))))))
 
 (define-enumerator->list
   irepository-get-infos
   (g_irepository_get_info (_fun (_repo = #f) _string _int -> _base-info))
   (g_irepository_get_n_infos (_fun (_repo = #f) _string -> _int)))
 
+(define-libgir/n g_irepository_find_by_name
+                 (_fun (_repo = #f) _string _string -> _base-info))
+
 (define-libgir/n g_base_info_get_type (_fun _base-info -> _int))
 (define-libgir/n g_base_info_get_name (_fun _base-info -> _string))
 (define-libgir/n g_base_info_get_namespace  (_fun _base-info -> _string))
+; (define-libgir/n g_base_info_iterate_attributes
+;   (_fun _base-info _attribute-iter (_ptr o _string) (_ptr o _string) -> _bool))
 
 ;;;; callable type
 
@@ -113,10 +150,9 @@
 (define-libgir/n g_callable_info_may_return_null
                  (_fun _callable-info -> _bool))
 
-(define-enumerator->list
-  callable-info-get-args
-  (g_callable_info_get_arg (_fun _callable-info _int -> _arg-info))
-  (g_callable_info_get_n_args (_fun _callable-info -> _int)))
+(define-enumerator->list* callable-info-get-args
+  g_callable_info_get_arg g_callable_info_get_n_args 
+  _callable-info _arg-info)
 
 ;;;; function type
 
@@ -127,6 +163,19 @@
 (define-libgir/n g_function_info_get_symbol (_fun _function-info -> _string))
 (define-libgir/n g_function_info_get_flags (_fun _function-info -> _function-flags))
 (define-libgir/n g_function_info_get_vfunc (_fun _function-info -> _vfunc-info))
+
+;; props?
+
+; (define-libgir/n g_function_info_invoke
+
+;                  (_fun (info inlist) ::
+;                        (info : _function-info)
+;                        (v-in : _cvector = (list->cvector inlist _argument))
+;                        (_int = (cvector-length v-in))
+;                        (_pointer = #f) (_int = 0)
+;                        (_ptr o _argument)
+;                        _gerror/raise
+;                        -> _bool))
 
 ;;;; vfunc type
 
@@ -143,8 +192,8 @@
 
 (define _signal-flags
   (_bitmask/bits (seq-labels
-    run_first run_last run_cleanup
-    no_recurse detailed action no_hooks must_collect)))
+    run-first run-last run-cleanup
+    no-recurse detailed action no-hooks must-collect)))
 
 (define-libgir/n g_signal_info_get_flags (_fun _signal-info -> _signal-flags))
 (define-libgir/n g_signal_info_get_class_closure (_fun _signal-info -> _vfunc-info))
@@ -196,57 +245,133 @@
 (define-libgir/n g_arg_info_get_closure (_fun _arg-info -> _int))
 (define-libgir/n g_arg_info_get_destroy (_fun _arg-info -> _int))
 
-;;;; object type
-
-(define-libgir/n g_object_info_get_type_name (_fun _object-info -> _string))
-(define-libgir/n g_object_info_get_type_init (_fun _object-info -> _string))
-(define-libgir/n g_object_info_get_abstract (_fun _object-info -> _bool))
-(define-libgir/n g_object_info_get_parent (_fun _object-info -> _object-info))
-
-(define-enumerator->list
-  object-info-get-methods
-  (g_object_info_get_method (_fun _object-info _int -> _function-info))
-  (g_object_info_get_n_methods (_fun _object-info -> _int)))
-
-(define-enumerator->list
-  object-info-get-interfaces
-  (g_object_info_get_interface (_fun _object-info _int -> _interface-info))
-  (g_object_info_get_n_interfaces (_fun _object-info -> _int)))
-
 ;;;; struct type
 
 (define-libgir/n g_struct_info_get_size (_fun _struct-info -> _size))
 (define-libgir/n g_struct_info_is_foreign (_fun _struct-info -> _bool))
 
-(define-enumerator->list
-  struct-info-get-methods
-  (g_struct_info_get_method (_fun _struct-info _int -> _function-info))
-  (g_struct_info_get_n_methods (_fun _struct-info -> _int)))
+(define-enumerator->list* struct-info-get-methods
+  g_struct_info_get_method g_struct_info_get_n_methods 
+  _struct-info _function-info)
 
 ;;;; enum type
 
-(define-enumerator->list
-  enum-info-get-values
-  (g_enum_info_get_value (_fun _enum-info _int -> _value-info))
-  (g_enum_info_get_n_values (_fun _enum-info -> _int)))
+(define-enumerator->list* enum-info-get-values
+  g_enum_info_get_value g_enum_info_get_n_values
+  _enum-info _value-info)
 
-(define-enumerator->list
-  enum-info-get-methods
-  (g_enum_info_get_method  (_fun _enum-info _int -> _function-info))
-  (g_enum_info_get_n_methods (_fun _enum-info -> _int)))
+(define-enumerator->list* enum-info-get-methods
+  g_enum_info_get_method g_enum_info_get_n_methods
+  _enum-info _function-info)
   
 (define-libgir/n g_value_info_get_value (_fun _value-info -> _int64))
 (define-libgir/n g_enum_info_get_storage_type (_fun _enum-info -> _typetag))
 
 ;;;; iface type
 
-(define-enumerator->list
-  interface-info-get-prerequisites
-  (g_interface_info_get_prerequisite (_fun _interface-info _int -> _base-info))
-  (g_interface_info_get_n_prerequisites (_fun _interface-info -> _int)))
+(define-enumerator->list* interface-info-get-prerequisites
+  g_interface_info_get_prerequisite g_interface_info_get_n_prerequisites 
+  _interface-info _base-info)
 
-(define-enumerator->list
-  interface-info-get-methods
-  (g_interface_info_get_method (_fun _interface-info _int -> _function-info))
-  (g_interface_info_get_n_methods (_fun _interface-info -> _int)))
+(define-enumerator->list* interface-info-get-properties
+  g_interface_info_get_property g_interface_info_get_n_properties 
+  _interface-info _property-info)
+
+(define-enumerator->list* interface-info-get-methods
+  g_interface_info_get_method g_interface_info_get_n_methods 
+  _interface-info _function-info)
+
+(define-enumerator->list* interface-info-get-signals
+  g_interface_info_get_signal g_interface_info_get_n_signals 
+  _interface-info _signal-info)
+
+(define-enumerator->list* interface-info-get-vfuncs
+  g_interface_info_get_vfunc g_interface_info_get_n_vfuncs 
+  _interface-info _vfunc-info)
+
+(define-enumerator->list* interface-info-get-constants
+  g_interface_info_get_constant g_interface_info_get_n_constants 
+  _interface-info _constant-info)
+
+(define-libgir/n g_interface_info_get_iface_struct (_fun _interface-info -> _struct-info))
+
+; g_interface_info_get_method
+; g_interface_info_find_vfunc
+
+
+;;;; class type
+
+(define-libgir/n g_object_info_get_type_name          (_fun _object-info -> _string))
+(define-libgir/n g_object_info_get_type_init          (_fun _object-info -> _string))
+(define-libgir/n g_object_info_get_abstract           (_fun _object-info -> _bool))
+(define-libgir/n g_object_info_get_fundamental        (_fun _object-info -> _bool))
+(define-libgir/n g_object_info_get_parent             (_fun _object-info -> _object-info))
+(define-libgir/n g_object_info_get_class_struct       (_fun _object-info -> _struct-info))
+(define-libgir/n g_object_info_get_unref_function     (_fun _object-info -> _string))
+(define-libgir/n g_object_info_get_ref_function       (_fun _object-info -> _string))
+(define-libgir/n g_object_info_get_set_value_function (_fun _object-info -> _string))
+(define-libgir/n g_object_info_get_get_value_function (_fun _object-info -> _string))
+
+(define-enumerator->list* object-info-get-interfaces
+  g_object_info_get_interface g_object_info_get_n_interfaces
+  _object-info _interface-info)
+
+(define-enumerator->list* object-info-get-fields
+  g_object_info_get_field  g_object_info_get_n_fields
+  _object-info _field-info)
+
+(define-enumerator->list* object-info-get-properties
+  g_object_info_get_property g_object_info_get_n_properties
+  _object-info _property-info)
+
+(define-enumerator->list* object-info-get-methods         
+  g_object_info_get_method g_object_info_get_n_methods
+  _object-info _function-info)
+
+(define-enumerator->list* object-info-get-signals         
+  g_object_info_get_signal g_object_info_get_n_signals
+  _object-info _signal-info)
+
+(define-enumerator->list* object-info-get-vfuncs          
+  g_object_info_get_vfunc g_object_info_get_n_vfuncs
+  _object-info _vfunc-info)
+
+(define-enumerator->list* object-info-get-constants       
+  g_object_info_get_constant g_object_info_get_n_constants
+  _object-info _constant-info)
+
+
+;;;; constant type
+
+(define-libgir/n g_constant_info_get_type (_fun _constant-info -> _type-info))
+; (define-libgir/n g_constant_info_get_value (_fun _constant-info -> _argument))
+
+;;;; field type
+
+(define _fieldinfo-flags (_bitmask/bits (seq-labels readable writable)))
+
+(define-libgir/n g_field_info_get_flags (_fun _field-info -> _fieldinfo-flags))
+(define-libgir/n g_field_info_get_size (_fun _field-info -> _int))
+(define-libgir/n g_field_info_get_offset (_fun _field-info -> _int))
+(define-libgir/n g_field_info_get_type (_fun _field-info -> _type-info))
+
+;;;; property type
+
+(define _param-flags
+  (_bitmask/bits (seq-labels
+    readable writable construct construct_only lax_validation
+    static_name static_nick static_blurb private deprecated)))
+
+(define-libgir/n g_property_info_get_flags (_fun _property-info -> _param-flags))
+(define-libgir/n g_property_info_get_type (_fun _property-info -> _type-info))
+(define-libgir/n g_property_info_get_ownership_transfer (_fun _property-info -> _transfer))
+
+;;;; registeredtypeinfo type
+
+(define-libgir/n g_registered_type_info_get_type_name
+                 (_fun _registered-type-info -> _string))
+(define-libgir/n g_registered_type_info_get_type_init
+                 (_fun _registered-type-info -> _string))
+(define-libgir/n g_registered_type_info_get_g_type
+                 (_fun _registered-type-info -> _gtype))
 
